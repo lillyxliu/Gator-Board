@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Gator Board mobile app."
+    />
+    <meta name="theme-color" content="#f5f6f2" />
+    <title>Gator Board</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="./" aria-label="Gator Board home">
+          <span class="brand-mark" aria-hidden="true">G</span>
+          <span>gator<span class="brand-light">board</span></span>
+        </a>
+      </header>
+
+      <main class="screens" id="screens">
+        <section class="screen is-active" id="feed-screen" data-screen="feed" aria-label="Feed content">
+          <!-- Add feed content here. -->
+        </section>
+        <section class="screen" id="events-screen" data-screen="events" aria-label="Events content" hidden>
+          <!-- Add events content here. -->
+        </section>
+        <section class="screen" id="saved-screen" data-screen="saved" aria-label="Saved content" hidden>
+          <!-- Add saved content here. -->
+        </section>
+        <section class="screen" id="profile-screen" data-screen="profile" aria-label="Profile content" hidden>
+          <!-- Add profile content here. -->
+        </section>
+      </main>
+
+      <nav class="bottom-nav" aria-label="Main navigation">
+        <button class="nav-item is-current" type="button" data-view="feed" aria-current="page">
+          <span class="nav-icon" aria-hidden="true">⌂</span>
+          <span>Feed</span>
+        </button>
+        <button class="nav-item" type="button" data-view="events">
+          <span class="nav-icon" aria-hidden="true">▦</span>
+          <span>Events</span>
+        </button>
+        <button class="nav-item" type="button" data-view="saved">
+          <span class="nav-icon" aria-hidden="true">♡</span>
+          <span>Saved</span>
+        </button>
+        <button class="nav-item" type="button" data-view="profile">
+          <span class="nav-icon" aria-hidden="true">◉</span>
+          <span>Profile</span>
+        </button>
+      </nav>
+    </div>
+  </body>
+</html>
