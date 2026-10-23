@@ -7,29 +7,36 @@
       name="description"
       content="Gator Board mobile app."
     />
-    <meta name="theme-color" content="#f5f6f2" />
+    <meta name="theme-color" content="#ffffff" />
     <title>Gator Board</title>
     <link rel="stylesheet" href="styles.css" />
     <script src="app.js" defer></script>
   </head>
   <body>
-    <div class="app-shell">
+    <main class="flow-page" id="welcome-screen">
+      <a class="flow-button" href="signup.html">Log in / Sign up</a>
+    </main>
+
+    <div class="app-shell" hidden>
       <header class="topbar">
-        <a class="brand" href="./" aria-label="Gator Board home">
+        <a class="brand" href="index.html" aria-label="Gator Board welcome">
           <span class="brand-mark" aria-hidden="true">G</span>
           <span>gator<span class="brand-light">board</span></span>
         </a>
       </header>
 
       <main class="screens" id="screens">
-        <section class="screen is-active" id="feed-screen" data-screen="feed" aria-label="Feed content">
-          <!-- Add feed content here. -->
+        <section class="screen is-active" id="home-screen" data-screen="home" aria-label="Home content">
+          <!-- Add home content here. -->
         </section>
-        <section class="screen" id="events-screen" data-screen="events" aria-label="Events content" hidden>
-          <!-- Add events content here. -->
+        <section class="screen" id="maps-screen" data-screen="maps" aria-label="Maps content" hidden>
+          <!-- Add maps content here. -->
         </section>
-        <section class="screen" id="saved-screen" data-screen="saved" aria-label="Saved content" hidden>
-          <!-- Add saved content here. -->
+        <section class="screen" id="post-screen" data-screen="post" aria-label="New post content" hidden>
+          <!-- Add new post content here. -->
+        </section>
+        <section class="screen" id="chat-screen" data-screen="chat" aria-label="Chat content" hidden>
+          <!-- Add chat content here. -->
         </section>
         <section class="screen" id="profile-screen" data-screen="profile" aria-label="Profile content" hidden>
           <!-- Add profile content here. -->

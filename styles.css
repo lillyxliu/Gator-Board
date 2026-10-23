@@ -2,7 +2,7 @@
   color-scheme: light;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: #19221e;
-  background: #f5f6f2;
+  background: #fff;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   --green: #146b4a;
@@ -29,6 +29,44 @@ button {
   min-height: 100vh;
   margin: 0 auto;
   padding: 0 24px 88px;
+  background: #f5f6f2;
+}
+
+.flow-page {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 24px;
+  background: #fff;
+}
+
+.flow-page[hidden],
+.app-shell[hidden] {
+  display: none;
+}
+
+.flow-page h1,
+.onboarding-step {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.flow-button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--green);
+  color: #fff;
+  font: inherit;
+  text-decoration: none;
 }
 
 .topbar {

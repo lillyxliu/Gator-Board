@@ -1,5 +1,11 @@
 const navigationItems = document.querySelectorAll(".nav-item");
 const screens = document.querySelectorAll(".screen");
+const appShell = document.querySelector(".app-shell");
+const welcomeScreen = document.querySelector("#welcome-screen");
+const isHome = window.location.hash === "#home";
+
+appShell.hidden = !isHome;
+welcomeScreen.hidden = isHome;
 
 navigationItems.forEach((item) => {
   item.addEventListener("click", () => {
