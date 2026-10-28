@@ -18,6 +18,7 @@ Then open `http://localhost:8000`. Choose **Continue to demo**, or follow the si
 2. Select a task card and use the back button to return Home.
 3. Select the center **+** button, complete the required fields, and select **Review**.
 4. On Review Task, select **Edit** to revise the draft or **Publish Task** to publish it.
-5. The published task appears on Home and remains available after refresh through `localStorage`.
+5. On the confirmation screen, select **View Task** to review the published task or **Return Home**.
+6. The published task appears on Home and remains available after refresh through `localStorage`.
 
 No build command or external dependencies are required.

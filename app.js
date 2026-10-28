@@ -74,14 +74,16 @@ function renderHome() {
   update();
 }
 
-function detailMarkup(task, review = false) {
-  return `${imageMarkup(task,"hero-image")}<div class="detail-heading"><h2>${escapeHtml(task.title)}</h2><strong>${escapeHtml(task.reward || task.summary || "$8")}</strong></div><p class="detail-row"><span>⌖</span>${escapeHtml(task.location)}</p><p class="detail-row"><span>▣</span>${escapeHtml(task.time)}</p>${review ? "" : `<div class="poster-row"><span class="avatar">👤</span><span><p>Posted by ${escapeHtml(task.poster || "gator_user")}</p><small>${escapeHtml(task.posted || "Just now")}</small></span><button class="outline-button" type="button" data-action="message">Message</button></div>`}<section class="detail-section"><h3>Description</h3><p>${escapeHtml(task.description)}</p></section><section class="detail-section"><h3>Location</h3><div class="map-placeholder" role="img" aria-label="Map showing ${escapeHtml(task.location)}"></div></section>${review ? "" : `<button class="primary-button offer-button" type="button" data-action="offer">Offer to Complete</button>`}`;
+function detailMarkup(task, review = false, ownerView = false) {
+  return `${imageMarkup(task,"hero-image")}<div class="detail-heading"><h2>${escapeHtml(task.title)}</h2><strong>${escapeHtml(task.reward || task.summary || "$8")}</strong></div><p class="detail-row"><span>⌖</span>${escapeHtml(task.location)}</p><p class="detail-row"><span>▣</span>${escapeHtml(task.time)}</p>${review ? "" : `<div class="poster-row"><span class="avatar">👤</span><span><p>Posted by ${escapeHtml(task.poster || "gator_user")}</p><small>${escapeHtml(task.posted || "Just now")}</small></span>${ownerView ? "" : `<button class="outline-button" type="button" data-action="message">Message</button>`}</div>`}<section class="detail-section"><h3>Description</h3><p>${escapeHtml(task.description)}</p></section><section class="detail-section"><h3>Location</h3><div class="map-placeholder" role="img" aria-label="Map showing ${escapeHtml(task.location)}"></div></section>${review ? "" : ownerView ? `<a class="secondary-button return-home-button" href="index.html#home">Return Home</a>` : `<button class="primary-button offer-button" type="button" data-action="offer">Offer to Complete</button>`}`;
 }
 
 function renderDetail() {
-  const id = new URLSearchParams(location.search).get("id") || "publix";
+  const params = new URLSearchParams(location.search);
+  const id = params.get("id") || "publix";
+  const ownerView = params.get("owner") === "1";
   const task = getAllTasks().find(item => item.id === id) || sampleTasks[0];
-  $("#task-detail").innerHTML = detailMarkup(task);
+  $("#task-detail").innerHTML = detailMarkup(task,false,ownerView);
   document.querySelectorAll("[data-action]").forEach(button => button.addEventListener("click", () => showToast(button.dataset.action === "message" ? `Opening chat with ${task.poster || "poster"}…` : "Offer sent to the task poster!")));
 }
 
@@ -121,11 +123,20 @@ function renderReview() {
   $("#review-detail").innerHTML = detailMarkup(task,true);
   $("#publish-task").addEventListener("click", () => {
     const tasks = getSavedTasks();
-    tasks.unshift({...task,id:`task-${Date.now()}`,createdByMe:true});
+    const publishedTask = {...task,id:`task-${Date.now()}`,createdByMe:true};
+    tasks.unshift(publishedTask);
     localStorage.setItem(STORAGE_KEY,JSON.stringify(tasks));
     localStorage.removeItem(DRAFT_KEY);
-    location.href="index.html#published";
+    location.href=`task-posted.html?id=${encodeURIComponent(publishedTask.id)}`;
   });
+}
+
+function renderPosted() {
+  const id = new URLSearchParams(location.search).get("id");
+  const task = getSavedTasks().find(item => item.id === id) || getSavedTasks()[0];
+  if (!task) { location.replace("index.html#home"); return; }
+  $("#posted-task-card").innerHTML = `${imageMarkup(task)}<div class="posted-card-main"><h2>${escapeHtml(task.title)}</h2><p>${escapeHtml(task.location)}</p></div><strong>${escapeHtml(task.reward || task.summary || "$0")}</strong><div class="posted-card-status"><span>● &nbsp;Currently Open</span><time>${escapeHtml(task.time)}</time></div>`;
+  $("#view-posted-task").href = `task-detail.html?id=${encodeURIComponent(task.id)}&owner=1`;
 }
 
 syncHomeEntry();
@@ -136,3 +147,4 @@ if (page === "home") { renderHome(); if (location.hash === "#published") showToa
 if (page === "detail") renderDetail();
 if (page === "add") renderAdd();
 if (page === "review") renderReview();
+if (page === "posted") renderPosted();
