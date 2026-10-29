@@ -150,14 +150,14 @@ if (page === "review") renderReview();
 if (page === "posted") renderPosted();
 
 const mapRequests = [
-  {kind:"tasks",title:"Pick up textbooks",category:"Errand",lat:29.6466,lng:-82.3479},
-  {kind:"tasks",title:"Pick up a package",category:"Delivery",lat:29.6443,lng:-82.3405},
-  {kind:"tasks",title:"Micro Study Edge...",category:"Study",lat:29.6484,lng:-82.3436},
-  {kind:"tasks",title:"Get a coffee from..",category:"Food",lat:29.6511,lng:-82.3429},
-  {kind:"trades",title:"$2",category:"Errand",lat:29.6452,lng:-82.3460},
-  {kind:"trades",title:"Gator Plushie",category:"Delivery",lat:29.6502,lng:-82.3486},
-  {kind:"trades",title:"Macro Study Edge...",category:"Study",lat:29.6484,lng:-82.3436},
-  {kind:"trades",title:"a croissant from star...",category:"Food",lat:29.6511,lng:-82.3429}
+  {kind:"tasks",title:"Pick up textbooks",full:"Pick up textbooks",category:"Errand",lat:29.6466,lng:-82.3479},
+  {kind:"tasks",title:"Pick up a package",full:"Pick up a package from the Amazon Locker",taskId:"package",category:"Delivery",lat:29.6443,lng:-82.3405},
+  {kind:"tasks",title:"Micro Study Edge...",full:"Micro Study Edge Packet",taskId:"study-packet",category:"Study",lat:29.6484,lng:-82.3436},
+  {kind:"tasks",title:"Get a coffee from..",full:"Get a coffee from Starbucks",taskId:"starbucks",category:"Food",lat:29.6511,lng:-82.3429},
+  {kind:"rewards",title:"$2",full:"$2",category:"Errand",lat:29.6452,lng:-82.3460},
+  {kind:"rewards",title:"Gator Plushie",full:"Gator Plushie",taskId:"package",category:"Delivery",lat:29.6502,lng:-82.3486},
+  {kind:"rewards",title:"Macro Study Edge...",full:"Macro Study Edge Packet",taskId:"study-packet",category:"Study",lat:29.6484,lng:-82.3436},
+  {kind:"rewards",title:"a croissant from star...",full:"A croissant from Starbucks",taskId:"starbucks",category:"Food",lat:29.6511,lng:-82.3429}
 ];
 
 function renderMap() {
@@ -201,18 +201,54 @@ function renderMap() {
     },() => showToast("Location unavailable, showing campus"),{enableHighAccuracy:true,maximumAge:10000});
   }
   let markers = [];
-  const state = {kind:"trades",category:"all",query:""};
+  const state = {kind:"tasks",category:"all",query:"",always:false};
   const draw = () => {
     markers.forEach(marker => marker.remove());
     const query = state.query.trim().toLowerCase();
     markers = mapRequests.filter(r => r.kind === state.kind && (state.category === "all" || r.category === state.category) && r.title.toLowerCase().includes(query)).map(r => {
       const element = document.createElement("div");
       element.className = "map-request";
-      element.title = r.title;
-      element.innerHTML = `<span class="map-label">${escapeHtml(r.title)}</span><span class="map-pin" aria-hidden="true"></span>`;
+      element.tabIndex = 0;
+      element.setAttribute("role","button");
+      element.setAttribute("aria-label",r.full);
+      element.innerHTML = `<span class="map-label"><span class="map-short">${escapeHtml(r.title)}</span><span class="map-full">${escapeHtml(r.full)}</span></span><span class="map-pin" aria-hidden="true"></span>`;
+      // First click expands the label, a second click opens the task page.
+      const activate = event => {
+        event.stopPropagation();
+        if (!element.classList.contains("is-open")) { closeOpenPin(); element.classList.add("is-open"); return; }
+        if (r.taskId) location.href = `task-detail.html?id=${encodeURIComponent(r.taskId)}`;
+        else showToast("Task page coming soon");
+      };
+      element.addEventListener("click",activate);
+      element.addEventListener("keydown",event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); activate(event); } });
       return new maplibregl.Marker({element,anchor:"top-left"}).setLngLat([r.lng,r.lat]).addTo(map);
     });
   };
+  const closeOpenPin = () => document.querySelectorAll(".map-request.is-open").forEach(open => open.classList.remove("is-open"));
+  map.on("click",closeOpenPin);
+  // Settings button (bottom-left) opens a small menu; "Always show labels" keeps bubbles visible when zoomed far out.
+  const gearIcon = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
+  const syncBubbles = () => $("#campus-map").classList.toggle("hide-bubbles",!state.always && map.getZoom() < 14);
+  const settingsControl = {
+    onAdd() {
+      const container = this.container = document.createElement("div");
+      container.className = "maplibregl-ctrl map-settings";
+      container.innerHTML = `<div class="map-settings-menu" id="map-settings-menu" role="dialog" aria-label="Map settings" hidden><h2>Map settings</h2><label class="map-switch"><span>Always show labels</span><input type="checkbox" id="setting-labels"><span class="map-switch-track" aria-hidden="true"></span></label></div><button type="button" class="map-settings-button" aria-label="Map settings" aria-haspopup="dialog" aria-expanded="false" aria-controls="map-settings-menu">${gearIcon}</button>`;
+      const button = container.querySelector(".map-settings-button"), menu = container.querySelector(".map-settings-menu");
+      const setOpen = open => { menu.hidden = !open; button.setAttribute("aria-expanded",open); };
+      button.addEventListener("click",() => setOpen(menu.hidden));
+      container.querySelector("#setting-labels").addEventListener("change",event => { state.always = event.target.checked; syncBubbles(); });
+      this.outside = event => { if (!container.contains(event.target)) setOpen(false); };
+      this.escape = event => { if (event.key === "Escape") setOpen(false); };
+      document.addEventListener("click",this.outside);
+      document.addEventListener("keydown",this.escape);
+      return container;
+    },
+    onRemove() { document.removeEventListener("click",this.outside); document.removeEventListener("keydown",this.escape); this.container.remove(); }
+  };
+  map.addControl(settingsControl,"bottom-left");
+  map.on("zoom",syncBubbles);
+  syncBubbles();
   const bind = (selector, key, attr) => document.querySelectorAll(selector).forEach(button => button.addEventListener("click", () => {
     state[key] = button.dataset[attr];
     document.querySelectorAll(selector).forEach(other => { const on = other === button; other.classList.toggle("is-selected",on); other.setAttribute("aria-pressed",on); });
@@ -221,6 +257,16 @@ function renderMap() {
   bind(".map-kind-button","kind","kind");
   bind(".map-chip","category","category");
   $("#task-search").addEventListener("input", event => { state.query = event.target.value; draw(); });
+  // Arrow hint at the end of the chip row: shown only while there is more to scroll to, fades once the user scrolls.
+  const chips = $(".map-filters"), more = $(".map-more");
+  const syncMore = () => {
+    more.hidden = chips.scrollWidth <= chips.clientWidth + 2;
+    more.classList.toggle("is-faded",chips.scrollLeft > 8);
+  };
+  chips.addEventListener("scroll",syncMore,{passive:true});
+  window.addEventListener("resize",syncMore);
+  more.addEventListener("click",() => chips.scrollBy({left:chips.clientWidth * 0.6,behavior:"smooth"}));
+  syncMore();
   draw();
 }
 if (page === "map") renderMap();
