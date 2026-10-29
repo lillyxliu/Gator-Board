@@ -148,3 +148,79 @@ if (page === "detail") renderDetail();
 if (page === "add") renderAdd();
 if (page === "review") renderReview();
 if (page === "posted") renderPosted();
+
+const mapRequests = [
+  {kind:"tasks",title:"Pick up textbooks",category:"Errand",lat:29.6466,lng:-82.3479},
+  {kind:"tasks",title:"Pick up a package",category:"Delivery",lat:29.6443,lng:-82.3405},
+  {kind:"tasks",title:"Micro Study Edge...",category:"Study",lat:29.6484,lng:-82.3436},
+  {kind:"tasks",title:"Get a coffee from..",category:"Food",lat:29.6511,lng:-82.3429},
+  {kind:"trades",title:"$2",category:"Errand",lat:29.6452,lng:-82.3460},
+  {kind:"trades",title:"Gator Plushie",category:"Delivery",lat:29.6502,lng:-82.3486},
+  {kind:"trades",title:"Macro Study Edge...",category:"Study",lat:29.6484,lng:-82.3436},
+  {kind:"trades",title:"a croissant from star...",category:"Food",lat:29.6511,lng:-82.3429}
+];
+
+function renderMap() {
+  if (!window.maplibregl || !window.pmtiles || !window.basemaps) { showToast("Map library failed to load"); return; }
+  const campus = [-82.3440,29.6485];
+  const protocol = new pmtiles.Protocol();
+  maplibregl.addProtocol("pmtiles",protocol.tile);
+  const pmtilesUrl = new URL("maps/gainesville.pmtiles",location.href).href;
+  if (location.protocol === "file:") showToast("Open the site through a web server (or GitHub Pages) to see the map");
+  // Download the 4 MB map file once instead of using HTTP range requests, so any static host or dev server works.
+  let mapFile;
+  const wholeFileSource = {
+    getKey: () => pmtilesUrl,
+    getBytes: async (offset, length) => {
+      mapFile ||= fetch(pmtilesUrl).then(response => { if (!response.ok) throw new Error(`Map file ${response.status}`); return response.arrayBuffer(); });
+      return {data:(await mapFile).slice(offset,offset + length)};
+    }
+  };
+  protocol.add(new pmtiles.PMTiles(wholeFileSource));
+  // symbol layers need glyph/sprite files, so keep only the offline-safe shape layers; request pins carry the labels.
+  const layers = basemaps.layers("protomaps",basemaps.namedFlavor("light")).filter(layer => layer.type !== "symbol");
+  const map = new maplibregl.Map({
+    container:"campus-map",center:campus,zoom:14.5,minZoom:11,maxZoom:18,
+    maxBounds:[[-82.40,29.61],[-82.28,29.69]],attributionControl:{compact:true},
+    style:{version:8,sources:{protomaps:{type:"vector",url:`pmtiles://${pmtilesUrl}`,attribution:'<a href="https://protomaps.com">Protomaps</a> © <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>'}},layers}
+  });
+  map.addControl(new maplibregl.NavigationControl({showCompass:false}),"top-left");
+  map.once("error", () => showToast("Couldn't load the map file"));
+  const you = document.createElement("div");
+  you.className = "map-you";
+  const youMarker = new maplibregl.Marker({element:you}).setLngLat(campus).addTo(map);
+  // Blue dot follows the device location (needs https or localhost); stays on campus if denied or outside the map area.
+  if (navigator.geolocation) {
+    let centered = false;
+    navigator.geolocation.watchPosition(({coords}) => {
+      const here = [coords.longitude,coords.latitude];
+      const [[west,south],[east,north]] = [[-82.40,29.61],[-82.28,29.69]];
+      if (here[0] < west || here[0] > east || here[1] < south || here[1] > north) { if (!centered) showToast("You're outside the UF map area"); centered = true; return; }
+      youMarker.setLngLat(here);
+      if (!centered) { map.easeTo({center:here}); centered = true; }
+    },() => showToast("Location unavailable, showing campus"),{enableHighAccuracy:true,maximumAge:10000});
+  }
+  let markers = [];
+  const state = {kind:"trades",category:"all",query:""};
+  const draw = () => {
+    markers.forEach(marker => marker.remove());
+    const query = state.query.trim().toLowerCase();
+    markers = mapRequests.filter(r => r.kind === state.kind && (state.category === "all" || r.category === state.category) && r.title.toLowerCase().includes(query)).map(r => {
+      const element = document.createElement("div");
+      element.className = "map-request";
+      element.title = r.title;
+      element.innerHTML = `<span class="map-label">${escapeHtml(r.title)}</span><span class="map-pin" aria-hidden="true"></span>`;
+      return new maplibregl.Marker({element,anchor:"top-left"}).setLngLat([r.lng,r.lat]).addTo(map);
+    });
+  };
+  const bind = (selector, key, attr) => document.querySelectorAll(selector).forEach(button => button.addEventListener("click", () => {
+    state[key] = button.dataset[attr];
+    document.querySelectorAll(selector).forEach(other => { const on = other === button; other.classList.toggle("is-selected",on); other.setAttribute("aria-pressed",on); });
+    draw();
+  }));
+  bind(".map-kind-button","kind","kind");
+  bind(".map-chip","category","category");
+  $("#task-search").addEventListener("input", event => { state.query = event.target.value; draw(); });
+  draw();
+}
+if (page === "map") renderMap();
