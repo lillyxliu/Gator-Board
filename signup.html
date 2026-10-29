@@ -1,16 +1,202 @@
 <!doctype html>
-<html lang="en">
+<html lang = "en">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#ffffff" />
-    <title>Log in / Sign up | Gator Board</title>
-    <link rel="stylesheet" href="styles.css" />
-  </head>
-  <body>
-    <main class="flow-page">
-      <h1>Log in or sign up</h1>
-      <a class="flow-button" href="onboarding.html">Continue</a>
-    </main>
-  </body>
+    <meta charset = "utf-8" />
+    <meta name = "viewport" content = "width=device-width, initial-scale = 1" />
+    <meta name = "theme-color" content = "#ffffff" />
+    <title>Sign up | Gator Board</title>
+    <link rel = "stylesheet" href = "styles.css" />
+  <style>
+    .signup-form {
+      width: 100%;
+      max-width: 360px;
+      text-align: left;
+    }
+
+    .signup-form label {
+      display: block;
+      margin: 14px 0 6px;
+      font-weight: 600;
+    }
+
+    .signup-form .field-control {
+      width: 100%;
+    }
+
+    .password-field {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .password-field input {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .show-button {
+      border: 1px solid #d9dfd9;
+      border-radius: 8px;
+      background: #d9dfd9;
+      padding: 10px;
+      transition: opacity 0.2s ease;
+    }
+
+    .show-button.active {
+      opacity: 0.4;
+    }
+
+    .error-message {
+      color: #d32f2f;
+      font-size: 0.875rem;
+      margin-top: 4px;
+    }
+
+    .signup-form .flow-button {
+      width: 100%;
+      margin-top: 24px;
+      border: none;
+      cursor: pointer;
+      font: inherit;
+      transition: opacity 0.2s ease;
+    }
+  </style>
+</head>
+
+<body>
+  <main class = "flow-page">
+    <h1>Gator Board</h1>
+    <h2>Create Account</h2>
+    <form id = "signup-form" class = "signup-form">
+      <label for = username>Username</label>
+      <input class = "field-control" type = "text" id = "username" placeholder = "Username required" minlength = "3" maxlength = "20" required />
+      <p id = "username-error" class = "error-message" role = "alert" hidden></p>
+
+      <label for = email>Email</label>
+      <input class = "field-control" type = "email" id = "email" placeholder = "Email required" required />
+      <p id = "email-error" class = "error-message" role = "alert" hidden></p>
+
+      <label for = password>Password</label>
+      <div class = "password-field">
+        <input class = "field-control" type = "password" id = "password" placeholder = "Password required" minlength = "8" required />
+        <button class = "show-button" type = "button" target = "password">Show</button>
+      </div>
+      <p id = "password-error" class = "error-message" role = "alert" hidden></p>
+
+      <label for = confirm-password>Confirm Password</label>
+      <div class = "password-field">
+        <input class = "field-control" type = "password" id = "confirm-password" placeholder = "Confirm password" minlength = "8" required />
+        <button class = "show-button" type = "button" target = "confirm-password">Show</button>
+      </div>
+      <p id = "confirm-password-error" class = "error-message" role = "alert" hidden></p>
+
+      <button class = "flow-button" type = "submit">Sign Up</button>
+    </form>
+  </main>
+
+  <script>
+    const form = document.querySelector("#signup-form");
+    const usernameInput = document.querySelector("#username");
+    const emailInput = document.querySelector("#email");
+    const passwordInput = document.querySelector("#password");
+    const confirmPasswordInput = document.querySelector("#confirm-password");
+
+    function showError(id, message) {
+      const errorElement = document.getElementById(id);
+      errorElement.textContent = message;
+      errorElement.hidden = !message;
+    }
+
+    function getUsers() {
+      try {
+        return JSON.parse(localStorage.getItem("gatorBoardUsers")) || [];
+      } catch {
+        return [];
+      }
+    }
+
+    function checkUser() {
+      const username = usernameInput.value.trim();
+      const exists = getUsers().some(user => user.username.toLowerCase() === username.toLowerCase());
+
+      if (exists) {
+        showError("username-error", "Username already exists. Please choose another one.");
+        return false;
+      }
+      showError("username-error", "");
+      return true;
+    }
+
+    usernameInput.addEventListener("blur", checkUser);
+
+    usernameInput.addEventListener("input", () => {
+      showError("username-error", "");
+    });
+
+    document.querySelectorAll(".show-button").forEach(button => {
+      button.addEventListener("click", () => {
+        const targetInput = document.getElementById(button.getAttribute("target"));
+        const visible = targetInput.type === "password";
+
+        targetInput.type = visible ? "text" : "password";
+        button.classList.toggle("active", visible);
+        button.setAttribute("aria-pressed", String(visible));
+      });
+    });
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+
+      const username = usernameInput.value.trim();
+      const email = emailInput.value.trim().toLowerCase();
+      const password = passwordInput.value;
+      const confirmPassword = confirmPasswordInput.value;
+      const users = getUsers();
+
+      let valid = true;
+
+      if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
+        showError("username-error", "Username must be 3-20 characters long, and can only contain letters, numbers, and underscores.");
+        valid = false;
+      } else if (!checkUser()) {
+        valid = false;
+      }
+
+      if (!/^[^\s@]+@ufl\.edu$/.test(email)) {
+        showError("email-error", "Please enter a valid University of Florida email address.");
+        valid = false;
+      } else if (users.some(user => user.email === email)) {
+        showError("email-error", "An account with this email address already exists.");
+        valid = false;
+      } else {
+        showError("email-error", "");
+      }
+
+      if (password.length < 8) {
+        showError("password-error", "Password must be at least 8 characters long.");
+        valid = false;
+      } else {
+        showError("password-error", "");
+      }
+
+      if (password !== confirmPassword) {
+        showError("confirm-password-error", "Passwords do not match.");
+        valid = false;
+      } else {
+        showError("confirm-password-error", "");
+      }
+
+      if (!valid) return;
+
+      users.push({ username, email });
+
+      localStorage.setItem("gatorBoardUsers", JSON.stringify(users));
+      localStorage.setItem("gatorBoardEmail", email);
+      localStorage.setItem("gatorBoardUsername", username);
+      localStorage.setItem("gatorBoardCurrentUser", JSON,stringify({ username, email }));
+
+      window.location.replace("index.html#home");
+    });
+  </script>
+</body>
 </html>
