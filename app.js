@@ -75,7 +75,24 @@ function renderHome() {
 }
 
 function detailMarkup(task, review = false, ownerView = false) {
-  return `${imageMarkup(task,"hero-image")}<div class="detail-heading"><h2>${escapeHtml(task.title)}</h2><strong>${escapeHtml(task.reward || task.summary || "$8")}</strong></div><p class="detail-row"><span>⌖</span>${escapeHtml(task.location)}</p><p class="detail-row"><span>▣</span>${escapeHtml(task.time)}</p>${review ? "" : `<div class="poster-row"><span class="avatar">👤</span><span><p>Posted by ${escapeHtml(task.poster || "gator_user")}</p><small>${escapeHtml(task.posted || "Just now")}</small></span>${ownerView ? "" : `<button class="outline-button" type="button" data-action="message">Message</button>`}</div>`}<section class="detail-section"><h3>Description</h3><p>${escapeHtml(task.description)}</p></section><section class="detail-section"><h3>Location</h3><div class="map-placeholder" role="img" aria-label="Map showing ${escapeHtml(task.location)}"></div></section>${review ? "" : ownerView ? `<a class="secondary-button return-home-button" href="index.html#home">Return Home</a>` : `<button class="primary-button offer-button" type="button" data-action="offer">Offer to Complete</button>`}`;
+  return `${imageMarkup(task,"hero-image")}<div class="detail-heading"><h2>${escapeHtml(task.title)}</h2><strong>${escapeHtml(task.reward || task.summary || "$8")}</strong></div><p class="detail-row"><span>⌖</span>${escapeHtml(task.location)}</p><p class="detail-row"><span>▣</span>${escapeHtml(task.time)}</p>${review ? "" : `<div class="poster-row"><span class="avatar">👤</span><span><p>Posted by ${escapeHtml(task.poster || "gator_user")}</p><small>${escapeHtml(task.posted || "Just now")}</small></span>${ownerView ? "" : `<button class="outline-button" type="button" data-action="message">Message</button>`}</div>`}<section class="detail-section"><h3>Description</h3><p>${escapeHtml(task.description)}</p></section><section class="detail-section"><h3>Location</h3><div class="detail-map" id="detail-map" role="region" aria-label="Map showing ${escapeHtml(task.location)}"></div></section>${review ? "" : ownerView ? `<a class="secondary-button return-home-button" href="index.html#home">Return Home</a>` : `<button class="primary-button offer-button" type="button" data-action="offer">Offer to Complete</button>`}`;
+}
+
+// Small real map for the review and detail pages; falls back to matching the location text against places.json for older tasks without coordinates.
+async function showTaskMap(task) {
+  const container = $("#detail-map");
+  if (!container) return;
+  let spot = Number.isFinite(task.lat) && Number.isFinite(task.lng) ? [task.lng,task.lat] : null;
+  if (!spot) {
+    const match = searchPlaces(await loadPlaces(),(task.location || "").replace(/\(.*?\)/g,"").trim(),{lat:CAMPUS_CENTER[1],lng:CAMPUS_CENTER[0]})[0];
+    if (match) spot = [match.lng,match.lat];
+  }
+  const map = createCampusMap(container,{center:spot || CAMPUS_CENTER,zoom:spot ? 16 : 14,cooperativeGestures:true});
+  if (!map || !spot) return;
+  const element = document.createElement("div");
+  element.className = "map-request";
+  element.innerHTML = '<span class="map-pin" aria-hidden="true"></span>';
+  new maplibregl.Marker({element,anchor:"top-left"}).setLngLat(spot).addTo(map);
 }
 
 function renderDetail() {
@@ -84,19 +101,108 @@ function renderDetail() {
   const ownerView = params.get("owner") === "1";
   const task = getAllTasks().find(item => item.id === id) || sampleTasks[0];
   $("#task-detail").innerHTML = detailMarkup(task,false,ownerView);
+  window.addEventListener("load",() => showTaskMap(task));
   document.querySelectorAll("[data-action]").forEach(button => button.addEventListener("click", () => showToast(button.dataset.action === "message" ? `Opening chat with ${task.poster || "poster"}…` : "Offer sent to the task poster!")));
 }
 
 function readForm(form) {
   const data = new FormData(form);
-  return {id:`task-${Date.now()}`,title:data.get("title").trim(),summary:`$${data.get("reward")}`,reward:`$${data.get("reward")}`,category:data.get("category"),description:data.get("description").trim(),location:data.get("location").trim(),time:data.get("time").trim(),cardTime:data.get("time").trim(),poster:"you",posted:"Just now",createdByMe:true,icon:data.get("category") === "Study" ? "▭" : "◇"};
+  return {id:`task-${Date.now()}`,title:data.get("title").trim(),summary:`$${data.get("reward")}`,reward:`$${data.get("reward")}`,category:data.get("category"),description:data.get("description").trim(),location:data.get("location").trim(),...(data.get("lat") && data.get("lng") ? {lat:Number(data.get("lat")),lng:Number(data.get("lng"))} : {}),time:data.get("time").trim(),cardTime:data.get("time").trim(),poster:"you",posted:"Just now",createdByMe:true,icon:data.get("category") === "Study" ? "▭" : "◇"};
 }
 
 function fillForm(form, draft) {
   if (!draft) return;
-  ["title","description","location","time","reward"].forEach(name => { if (form.elements[name] && draft[name] != null) form.elements[name].value = name === "reward" ? String(draft.reward).replace("$","") : draft[name]; });
+  ["title","description","location","time","reward","lat","lng"].forEach(name => { if (form.elements[name] && draft[name] != null) form.elements[name].value = name === "reward" ? String(draft.reward).replace("$","") : draft[name]; });
   const category = form.querySelector(`[name="category"][value="${CSS.escape(draft.category || "Errand")}"]`);
   if (category) category.checked = true;
+}
+
+// Offline place search for the Add Task form: places.json holds named spots extracted from the map file plus student nicknames.
+let placesPromise;
+const loadPlaces = () => placesPromise ||= fetch("places.json").then(response => response.ok ? response.json() : []).catch(() => []);
+const distanceKm = (a, b) => Math.hypot((a.lat - b.lat) * 111,(a.lng - b.lng) * 96);
+
+function searchPlaces(places, text, near) {
+  const query = text.trim().toLowerCase();
+  if (query.length < 2) return [];
+  const tokens = query.split(/\s+/);
+  const scored = [];
+  places.forEach(place => {
+    let score = 0;
+    [place.n.toLowerCase(),...(place.a || [])].forEach(name => {
+      const words = name.split(/[\s/&.-]+/);
+      if (name === query) score = Math.max(score,5);
+      else if (name.startsWith(query)) score = Math.max(score,4);
+      else if (words.some(word => word.startsWith(query))) score = Math.max(score,3);
+      else if (tokens.every(token => words.some(word => word.startsWith(token)))) score = Math.max(score,2);
+      else if (name.includes(query)) score = Math.max(score,1);
+    });
+    if (score) scored.push({place,score,distance:distanceKm(place,near)});
+  });
+  return scored.sort((a,b) => b.score - a.score || a.distance - b.distance).slice(0,6).map(item => item.place);
+}
+
+function setupLocationPicker(form) {
+  const input = form.elements.location, latInput = form.elements.lat, lngInput = form.elements.lng;
+  const list = $("#location-suggestions"), status = $("#pin-status");
+  const map = createCampusMap("location-map",{zoom:14});
+  if (!map) return;
+  const element = document.createElement("div");
+  element.className = "map-request";
+  element.innerHTML = '<span class="map-pin" aria-hidden="true"></span>';
+  const pin = new maplibregl.Marker({element,anchor:"top-left",draggable:true});
+  let places = [], autoFilled = false, shown = [];
+  loadPlaces().then(data => { places = data; });
+  const here = () => ({lng:+lngInput.value || CAMPUS_CENTER[0],lat:+latInput.value || CAMPUS_CENTER[1]});
+  const setPin = ([lng, lat], fly) => {
+    pin.setLngLat([lng,lat]).addTo(map);
+    latInput.value = lat.toFixed(5);
+    lngInput.value = lng.toFixed(5);
+    status.textContent = "Pin set. Drag it or tap the map to adjust.";
+    if (fly) map.easeTo({center:[lng,lat],zoom:Math.max(map.getZoom(),16)});
+  };
+  // When the pin is placed by hand, name the spot after the closest known place unless the user typed their own text.
+  const nameFromPin = () => {
+    if (input.value.trim() && !autoFilled) return;
+    const spot = here();
+    const closest = places.map(place => ({place,distance:distanceKm(place,spot)})).sort((a,b) => a.distance - b.distance)[0];
+    input.value = closest && closest.distance < 0.15 ? `Near ${closest.place.n}` : "Dropped pin";
+    autoFilled = true;
+  };
+  const hideList = () => { list.hidden = true; };
+  const choose = place => {
+    input.value = place.n;
+    autoFilled = false;
+    setPin([place.lng,place.lat],true);
+    hideList();
+  };
+  const showMatches = () => {
+    shown = searchPlaces(places,input.value,here());
+    list.innerHTML = shown.map((place,index) => `<li role="option" data-index="${index}"><strong>${escapeHtml(place.n)}</strong><span>${escapeHtml(place.k.replace(/_/g," "))}</span></li>`).join("");
+    list.hidden = !shown.length;
+  };
+  input.addEventListener("input",() => { autoFilled = false; showMatches(); });
+  input.addEventListener("keydown",event => {
+    if (event.key === "Enter" && !list.hidden && shown.length) { event.preventDefault(); choose(shown[0]); }
+    if (event.key === "Escape") hideList();
+  });
+  list.addEventListener("mousedown",event => {
+    const item = event.target.closest("li");
+    if (item) { event.preventDefault(); choose(shown[+item.dataset.index]); }
+  });
+  document.addEventListener("click",event => { if (event.target !== input && !list.contains(event.target)) hideList(); });
+  map.on("click",event => { setPin([event.lngLat.lng,event.lngLat.lat]); nameFromPin(); });
+  pin.on("dragend",() => { const spot = pin.getLngLat(); setPin([spot.lng,spot.lat]); nameFromPin(); });
+  $("#use-my-location").addEventListener("click",() => {
+    if (!navigator.geolocation) { showToast("Location isn't available on this device"); return; }
+    navigator.geolocation.getCurrentPosition(({coords}) => {
+      const spot = [coords.longitude,coords.latitude];
+      if (!inMapBounds(spot)) { showToast("You're outside the UF map area"); return; }
+      setPin(spot,true);
+      nameFromPin();
+    },() => showToast("Couldn't get your location"),{enableHighAccuracy:true,timeout:10000});
+  });
+  if (latInput.value && lngInput.value) { setPin([+lngInput.value,+latInput.value]); map.setCenter([+lngInput.value,+latInput.value]); map.setZoom(16); }
 }
 
 function renderAdd() {
@@ -104,9 +210,12 @@ function renderAdd() {
   let draft;
   try { draft = JSON.parse(localStorage.getItem(DRAFT_KEY)); } catch { draft = null; }
   fillForm(form,draft);
+  // Wait for window load: the map code below the page dispatch lines must have run first.
+  window.addEventListener("load",() => setupLocationPicker(form));
   form.addEventListener("submit", event => {
     event.preventDefault();
     if (!form.reportValidity()) return;
+    if (!form.elements.lat.value) { showToast("Pick a spot on the map so people can find the task"); $("#location-map").scrollIntoView({block:"center",behavior:"smooth"}); return; }
     const task = readForm(form);
     const photo = form.elements.photo.files[0];
     const saveAndReview = () => { localStorage.setItem(DRAFT_KEY,JSON.stringify(task)); location.href="review-task.html"; };
@@ -121,6 +230,7 @@ function renderReview() {
   try { task = JSON.parse(localStorage.getItem(DRAFT_KEY)); } catch { task = null; }
   if (!task) { location.replace("add-task.html"); return; }
   $("#review-detail").innerHTML = detailMarkup(task,true);
+  window.addEventListener("load",() => showTaskMap(task));
   $("#publish-task").addEventListener("click", () => {
     const tasks = getSavedTasks();
     const publishedTask = {...task,id:`task-${Date.now()}`,createdByMe:true};
@@ -160,9 +270,15 @@ const mapRequests = [
   {kind:"rewards",title:"a croissant from star...",full:"A croissant from Starbucks",taskId:"starbucks",category:"Food",lat:29.6511,lng:-82.3429}
 ];
 
-function renderMap() {
-  if (!window.maplibregl || !window.pmtiles || !window.basemaps) { showToast("Map library failed to load"); return; }
-  const campus = [-82.3440,29.6485];
+const MAP_BOUNDS = [[-82.40,29.61],[-82.28,29.69]];
+const CAMPUS_CENTER = [-82.3440,29.6485];
+const BUILDING_LABEL_KINDS = ["building","library","university","college","school","stadium","attraction","hospital","theatre","museum","arts_centre","townhall","conference_centre","food_court","sports_centre","fitness_centre"];
+const MAJOR_LABEL_KINDS = ["university","college","hospital","stadium","library","attraction","museum"];
+const inMapBounds = ([lng,lat]) => lng >= MAP_BOUNDS[0][0] && lng <= MAP_BOUNDS[1][0] && lat >= MAP_BOUNDS[0][1] && lat <= MAP_BOUNDS[1][1];
+
+// Offline vector map of Gainesville (maps/gainesville.pmtiles) with zoom buttons; shared by the map page and the location picker.
+function createCampusMap(container, {center = CAMPUS_CENTER, zoom = 14.5, cooperativeGestures = false} = {}) {
+  if (!window.maplibregl || !window.pmtiles || !window.basemaps) { showToast("Map library failed to load"); return null; }
   const protocol = new pmtiles.Protocol();
   maplibregl.addProtocol("pmtiles",protocol.tile);
   const pmtilesUrl = new URL("maps/gainesville.pmtiles",location.href).href;
@@ -177,15 +293,32 @@ function renderMap() {
     }
   };
   protocol.add(new pmtiles.PMTiles(wholeFileSource));
-  // symbol layers need glyph/sprite files, so keep only the offline-safe shape layers; request pins carry the labels.
+  // The built-in symbol layers need sprite files, so drop them and add text-only label layers (fonts live in fonts/).
+  // Labels thin out as you zoom out: every building name up close, only major places mid-range, then town areas far out.
   const layers = basemaps.layers("protomaps",basemaps.namedFlavor("light")).filter(layer => layer.type !== "symbol");
+  const labelLayout = size => ({"text-field":["get","name"],"text-font":["Noto Sans Medium"],"text-size":size,"text-max-width":7,"text-padding":4});
+  const labelPaint = {"text-color":"#24452e","text-halo-color":"#fffdf9","text-halo-width":1.6};
+  const areaPaint = {"text-color":"#5f6d63","text-halo-color":"#f4efe6","text-halo-width":1.6};
+  layers.push(
+    {id:"building-labels",type:"symbol",source:"protomaps","source-layer":"pois",minzoom:15.5,filter:["in",["get","kind"],["literal",BUILDING_LABEL_KINDS]],layout:labelLayout(12),paint:labelPaint},
+    {id:"major-labels",type:"symbol",source:"protomaps","source-layer":"pois",minzoom:14,maxzoom:15.5,filter:["in",["get","kind"],["literal",MAJOR_LABEL_KINDS]],layout:labelLayout(12),paint:labelPaint},
+    {id:"area-labels",type:"symbol",source:"protomaps","source-layer":"places",minzoom:12,maxzoom:15,filter:["all",["in",["get","kind"],["literal",["neighbourhood","locality"]]],["!=",["get","kind_detail"],"city"]],layout:{...labelLayout(11),"text-transform":"uppercase","text-letter-spacing":0.08},paint:areaPaint},
+    {id:"city-label",type:"symbol",source:"protomaps","source-layer":"places",minzoom:11,maxzoom:15,filter:["==",["get","kind_detail"],"city"],layout:{...labelLayout(17),"text-transform":"uppercase","text-letter-spacing":0.12},paint:areaPaint}
+  );
   const map = new maplibregl.Map({
-    container:"campus-map",center:campus,zoom:14.5,minZoom:11,maxZoom:18,
-    maxBounds:[[-82.40,29.61],[-82.28,29.69]],attributionControl:{compact:true},
-    style:{version:8,sources:{protomaps:{type:"vector",url:`pmtiles://${pmtilesUrl}`,attribution:'<a href="https://protomaps.com">Protomaps</a> © <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>'}},layers}
+    container,center,zoom,cooperativeGestures,minZoom:11,maxZoom:18,
+    maxBounds:MAP_BOUNDS,attributionControl:{compact:true},
+    style:{version:8,glyphs:`${new URL("fonts/",location.href).href}{fontstack}/{range}.pbf`,sources:{protomaps:{type:"vector",url:`pmtiles://${pmtilesUrl}`,attribution:'<a href="https://protomaps.com">Protomaps</a> © <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>'}},layers}
   });
   map.addControl(new maplibregl.NavigationControl({showCompass:false}),"top-left");
   map.once("error", () => showToast("Couldn't load the map file"));
+  return map;
+}
+
+function renderMap() {
+  const map = createCampusMap("campus-map");
+  if (!map) return;
+  const campus = CAMPUS_CENTER;
   const you = document.createElement("div");
   you.className = "map-you";
   const youMarker = new maplibregl.Marker({element:you}).setLngLat(campus).addTo(map);
@@ -194,18 +327,20 @@ function renderMap() {
     let centered = false;
     navigator.geolocation.watchPosition(({coords}) => {
       const here = [coords.longitude,coords.latitude];
-      const [[west,south],[east,north]] = [[-82.40,29.61],[-82.28,29.69]];
-      if (here[0] < west || here[0] > east || here[1] < south || here[1] > north) { if (!centered) showToast("You're outside the UF map area"); centered = true; return; }
+      
+      if (!inMapBounds(here)) { if (!centered) showToast("You're outside the UF map area"); centered = true; return; }
       youMarker.setLngLat(here);
       if (!centered) { map.easeTo({center:here}); centered = true; }
     },() => showToast("Location unavailable, showing campus"),{enableHighAccuracy:true,maximumAge:10000});
   }
+  const savedRequests = getSavedTasks().filter(task => Number.isFinite(task.lat) && Number.isFinite(task.lng)).map(task => ({kind:"tasks",title:task.title.length > 22 ? `${task.title.slice(0,21)}…` : task.title,full:task.title,taskId:task.id,category:task.category,lat:task.lat,lng:task.lng}));
+  const allRequests = mapRequests.concat(savedRequests);
   let markers = [];
   const state = {kind:"tasks",category:"all",query:"",always:false};
   const draw = () => {
     markers.forEach(marker => marker.remove());
     const query = state.query.trim().toLowerCase();
-    markers = mapRequests.filter(r => r.kind === state.kind && (state.category === "all" || r.category === state.category) && r.title.toLowerCase().includes(query)).map(r => {
+    markers = allRequests.filter(r => r.kind === state.kind && (state.category === "all" || r.category === state.category) && r.title.toLowerCase().includes(query)).map(r => {
       const element = document.createElement("div");
       element.className = "map-request";
       element.tabIndex = 0;
