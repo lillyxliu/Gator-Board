@@ -107,32 +107,6 @@
       errorElement.hidden = !message;
     }
 
-    function getUsers() {
-      try {
-        return JSON.parse(localStorage.getItem("gatorBoardUsers")) || [];
-      } catch {
-        return [];
-      }
-    }
-
-    function checkUser() {
-      const username = usernameInput.value.trim();
-      const exists = getUsers().some(user => user.username.toLowerCase() === username.toLowerCase());
-
-      if (exists) {
-        showError("username-error", "Username already exists. Please choose another one.");
-        return false;
-      }
-      showError("username-error", "");
-      return true;
-    }
-
-    usernameInput.addEventListener("blur", checkUser);
-
-    usernameInput.addEventListener("input", () => {
-      showError("username-error", "");
-    });
-
     document.querySelectorAll(".show-button").forEach(button => {
       button.addEventListener("click", () => {
         const targetInput = document.getElementById(button.getAttribute("target"));
@@ -144,29 +118,25 @@
       });
     });
 
-    form.addEventListener("submit", (event) => {
+    form.addEventListener("submit", async (event) => {
       event.preventDefault();
 
       const username = usernameInput.value.trim();
       const email = emailInput.value.trim().toLowerCase();
       const password = passwordInput.value;
       const confirmPassword = confirmPasswordInput.value;
-      const users = getUsers();
 
       let valid = true;
 
       if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
         showError("username-error", "Username must be 3-20 characters long, and can only contain letters, numbers, and underscores.");
         valid = false;
-      } else if (!checkUser()) {
-        valid = false;
+      } else {
+        showError("username-error", "");
       }
 
       if (!/^[^\s@]+@ufl\.edu$/.test(email)) {
         showError("email-error", "Please enter a valid University of Florida email address.");
-        valid = false;
-      } else if (users.some(user => user.email === email)) {
-        showError("email-error", "An account with this email address already exists.");
         valid = false;
       } else {
         showError("email-error", "");
@@ -188,14 +158,27 @@
 
       if (!valid) return;
 
-      users.push({ username, email });
+      try {
+        const response = await fetch("/api/signup", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({username, email, password})
+        });
 
-      localStorage.setItem("gatorBoardUsers", JSON.stringify(users));
-      localStorage.setItem("gatorBoardEmail", email);
-      localStorage.setItem("gatorBoardUsername", username);
-      localStorage.setItem("gatorBoardCurrentUser", JSON.stringify({ username, email }));
+        const result = await response.json();
 
-      window.location.replace("index.html#home");
+        if (!response.ok) {
+          showError("email-error", result.error);
+          return;
+        }
+
+        window.location.href = "/#home";
+      } catch {
+        console.error("Signup error:", error);
+        showError("email-error", "Unable to connect to server.");
+      }
     });
   </script>
 </body>

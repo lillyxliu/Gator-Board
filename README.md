@@ -1,16 +1,16 @@
 # Gator Board
 
-Gator Board is a mobile-first task exchange for University of Florida students. It is built with HTML, CSS, and vanilla JavaScript and can be hosted directly on GitHub Pages.
+Gator Board is a mobile-first task exchange for University of Florida students. It is built with HTML, CSS, JavaScript, Node.js, Express, PostgreSQL, and Docker.
 
-## Run locally
+## Run instructions
 
-From the repository folder, run:
+Open Docker Desktop, then run:
 
 ```sh
-python3 -m http.server 8000
+docker compose up --build -d
 ```
 
-Then open `http://localhost:8000`. Choose **Continue to demo**, or follow the signup/onboarding shell to enter the home page.
+Open http://localhost:3000
 
 ## Test the task flow
 
