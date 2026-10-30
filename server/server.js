@@ -32,6 +32,7 @@ app.use(session({
 }));
 
 app.use("/api", require("./auth"));
+app.use("/api/profile", require("./profile"));
 app.use(express.static(path.join(__dirname, "..")));
 app.listen(process.env.PORT || 3000, () => {
     console.log(`Server is running on port ${process.env.PORT || 3000}`);

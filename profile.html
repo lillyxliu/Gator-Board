@@ -1,15 +1,74 @@
 <!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#ffffff" />
-    <title>Log in / Sign up | Gator Board</title>
-    <link rel="stylesheet" href="styles.css" />
-  </head>
-  <body>
-    <main class="flow-page">
-      <h1>Log in or sign up</h1>
-    </main>
-  </body>
+<html lang = "en">
+    <head>
+        <meta charset = "utf-8"/>
+        <meta name = "viewport" content = "width = device-width, initial-scale = 1"/>
+        <title>Profile | Gator Board</title>
+        <link rel = "stylesheet" href = "styles.css"/>
+        <script src = "app.js" defer></script>
+    </head>
+
+    <body data-page = "profile">
+        <main class = "app-shell profile-page">
+            <header class = "page-header">
+                <a href = "index.html#home" aria-label = "Back">‹</a>
+                <h1 id = "profile-title">My Profile</h1>
+                <span></span>
+            </header>
+
+            <section class = "profile-card">
+                <div class = "profile-avatar" id = "profile-avatar">♙</div>
+                <h2 id = "profile-name">Loading...</h2>
+                <p id = "profile-email"></p>
+                <p id = "profile-rating">No ratings yet.</p>
+            </section>
+
+            <section class = "profile-section" id = "profile-edit" hidden>
+                <h2>Edit Profile</h2>
+                <form id = "profile-form">
+                    <label class = "form-label" for = "profile-username">
+                        Username
+                        <input id = "profile-username" name = "username" minlength = "3" maxlength = "20" pattern = "[a-zA-Z0-9_]{3,20}" required/>
+                    </label>
+                    <button class = "primary-button" type = "submit">
+                        Save Changes
+                    </button>
+                </form>
+            </section>
+
+            <section class = "profile-section">
+                <h2>Reviews</h2>
+                <div id = "profile-reviews">
+                    <p>No reviews yet.</p>
+                </div>
+            </section>
+
+            <section class = "profile-section" id = "profile-settings" hidden>
+                <h2>Account</h2>
+                <button class = "secondary-button" id = "profile-logout" type = "button">
+                    Log Out
+                </button>
+            </section>
+        </main>
+
+        <nav class = "bottom-nav" aria-label = "Main navigation">
+            <a class = "nav-item" href = "index.html#home">
+                <span class = "nav-icon">⌂</span><span>Home</span>
+            </a>
+            <a class = "nav-item" href = "map.html">
+                <span class = "nav-icon">⌖</span><span>Map</span>
+            </a>
+            <a class = "nav-item add-nav" href = "add-task.html" aria-label = "Add a task">
+                <span>＋</span>
+            </a>
+            <button class = "nav-item" type = "button" data-placeholder = "Chat">
+                <span class = "nav-iocon">▢</span><span>Chat</span>
+            </button>
+            <a class = "nav-item is-current" href = "profile.html" aria-current = "page">
+                <span class = "nav-icon profile-nav-icon">♙</span><span>Profile</span>
+            </a>
+        </nav>
+
+        <div class = "toast" role = "status" aria-live = "polite"></div>
+    </body>
 </html>

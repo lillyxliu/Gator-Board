@@ -27,7 +27,7 @@ async function syncHomeEntry() {
     document.querySelector("#home-app").hidden = !showApp;
     document.querySelector("#home-nav").hidden = !showApp;
   } catch {
-    window.location.href = "auth.html";
+    window.location.href = "login.html";
   }
 }
 
@@ -271,7 +271,131 @@ function renderPosted() {
   $("#view-posted-task").href = `task-detail.html?id=${encodeURIComponent(task.id)}&owner=1`;
 }
 
+async function loadNavAvatar() {
+  const icon = $(".profile-nav-icon");
+  if (!icon) return;
+  try {
+    const response = await fetch('/api/profile/me');
+    if (!response.ok) return;
+    const {user} = await response.json();
+    if (!user.avatar) return;
+    const image = document.createElement("img");
+    image.alt = "";
+    image.onload = () => icon.replaceChildren(image);
+    image.src = user.avatar;
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+async function renderProfile() {
+  const userId = new URLSearchParams(location.search).get("id");
+  const isPublic = userId !== null;
+
+  if (isPublic && !/^\d+$/.test(userId)) {
+    $("#profile-name").textContent = "Invalid profile.";
+    return;
+  }
+  try {
+    const response = await fetch (isPublic
+      ? `/api/profile/users/${userId}`
+      : "/api/profile/me");
+    if (response.status === 401 && !isPublic) {
+      location.href = "login.html";
+      return;
+    }
+    if (!response.ok) throw new Error("Could not load profile.");
+    const {user} = await response.json();
+
+    $("#profile-title").textContent = isPublic ? "Profile" : "My Profile";
+    $("#profile-name").textContent = user.username;
+
+    if (user.avatar) {
+      const image = document.createElement("img");
+      image.alt = "Profile Picture";
+      image.onload = () => $("#profile-avatar").replaceChildren(image);
+      image.src = user.avatar;
+    }
+
+    if (!isPublic) {
+      $("#profile-email").textContent = user.email;
+      $("#profile-edit").hidden = false;
+      $("#profile-settings").hidden = false;
+      $("#profile-username").value = user.username;
+      $("#profile-form").addEventListener("submit", async event => {
+        event.preventDefault();
+        try {
+          const response = await fetch('/api/profile/me', {
+            method: "PATCH",
+            headers: {"Content-Type" : "application/json"},
+            body: JSON.stringify({username: $("#profile-username").value.trim()
+          })
+        });
+        const result = await response.json();
+
+        if (!response.ok) {
+          showToast(result.error || "Could not save profile.");
+          return;
+        }
+        $("#profile-name").textContent = result.user.username;
+        showToast("Profile updated!");
+      } catch {
+        showToast("Could not save profile.");
+      }
+    });
+    $("#profile-logout").addEventListener("click", async () => {
+        try {
+          const response = await fetch('/api/logout', {method: "POST"});
+          if(!response.ok) throw new Error();
+          location.href = "login.html";
+        } catch {
+          showToast("Could not log out.");
+        }
+      });
+    }
+    const id = isPublic ? userId : user.id;
+    const [profileResponse, reviewsResponse] = await Promise.all([
+      fetch(`/api/profile/users/${id}`),
+      fetch(`/api/profile/users/${id}/reviews`)
+    ]);
+    if (!profileResponse.ok || !reviewsResponse.ok) {
+      throw new Error("Could not load reviews.");
+    }
+    const {user: publicUser} = await profileResponse.json();
+    const {reviews} = await reviewsResponse.json();
+
+    $("#profile-rating").textContent = publicUser.review_count
+      ? `★ ${publicUser.ave_rating} (${publicUser.review_count} reviews)`
+      : "No ratings yet.";
+    const container = $("#profile-reviews");
+    container.replaceChildren();
+
+    if (!reviews.length) {
+      const message = document.createElement("p");
+      message.textContent = "No reviews yet."
+      container.append(message);
+    }
+
+    reviews.forEach(review => {
+      const item = document.createElement("article");
+      item.className = "profile-review";
+      const heading = document.createElement("strong");
+      heading.textContent = `${review.reviewer_username} · ${"★".repeat(review.rating)}`;
+      const comment = document.createElement("p");
+      comment.textContent = review.comment || "No comment provided.";
+
+      item.append(heading, comment);
+      container.append(item);
+    });
+  } catch (error) {
+    console.error(error);
+    $("#profile-name").textContent = "Profile unavailable";
+    showToast("Could not load profile.");
+  }
+}
+
 syncHomeEntry();
+loadNavAvatar();
 window.addEventListener("hashchange", syncHomeEntry);
 document.querySelectorAll("[data-placeholder]").forEach(button => button.addEventListener("click", () => showToast(`${button.dataset.placeholder} is coming soon`)));
 
@@ -280,6 +404,7 @@ if (page === "detail") renderDetail();
 if (page === "add") renderAdd();
 if (page === "review") renderReview();
 if (page === "posted") renderPosted();
+if (page === "profile") renderProfile();
 
 const mapRequests = [
   {kind:"tasks",title:"Pick up textbooks",full:"Pick up textbooks",category:"Errand",lat:29.6466,lng:-82.3479},
