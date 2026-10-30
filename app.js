@@ -65,6 +65,11 @@ function imageMarkup(task, className = "task-image") {
   return `<span class="${className}" aria-hidden="true">${taskIcon(task)}</span>`;
 }
 
+function taskDuration(task) {
+  const minutes = Number(task.durationMinutes);
+  return Number.isFinite(minutes) && minutes > 0 ? minutes : Infinity;
+}
+
 function taskRewardAmount(task) {
   const value = String(task.reward ?? task.summary ?? "").trim();
   return /^\$?\d+(?:\.\d+)?$/.test(value) ? Number(value.replace("$", "")) : null;
@@ -110,9 +115,21 @@ function renderHome() {
     });
     taskList.innerHTML = tasks.map(task => `<a class="task-card" href="task-detail.html?id=${encodeURIComponent(task.id)}">${imageMarkup(task)}<span class="task-card-content"><h3>${escapeHtml(task.title)}</h3><p class="task-meta"><strong>${escapeHtml(task.summary || task.reward || "$8")}</strong> · ${escapeHtml(task.category)}</p><p class="task-meta"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 12-9 12S3 17 3 10a9 9 0 1 1 18 0Z"/><circle cx="12" cy="10" r="3"/></svg> &nbsp;${escapeHtml(task.location)}${task.distance ? ` (${escapeHtml(task.distance)})` : ""}</p><p class="task-meta"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 3"/></svg> &nbsp;${escapeHtml(task.cardTime || task.time)}</p></span></a>`).join("");
     const cards = [...taskList.children];
+    tasks.forEach((task,index) => {
+      if (Number.isFinite(taskDuration(task))) {
+        const duration = document.createElement("p");
+        duration.className = "task-meta";
+        duration.textContent = `Estimated duration: ${task.durationMinutes} min`;
+        cards[index].querySelector(".task-card-content").append(duration);
+      }
+    });
     const ordered = tasks.map((task,index) => ({task,index,distance:distance(task)}));
     ordered.sort((a,b) => {
       if (sort.value === "nearest") return (a.distance === b.distance ? 0 : a.distance - b.distance) || a.index - b.index;
+      if (sort.value === "duration") {
+        const first = taskDuration(a.task), second = taskDuration(b.task);
+        return (first === second ? 0 : first-second) || a.index-b.index;
+      }
       if (sort.value.startsWith("reward")) {
         const first = taskRewardAmount(a.task), second = taskRewardAmount(b.task);
         if (first === null || second === null) return first === second ? a.index-b.index : first === null ? 1 : -1;
@@ -169,7 +186,7 @@ function renderHome() {
 }
 
 function detailMarkup(task, review = false, ownerView = false) {
-  return `${imageMarkup(task,"hero-image")}<div class="detail-heading"><h2>${escapeHtml(task.title)}</h2><strong>${escapeHtml(task.reward || task.summary || "$8")}</strong></div><p class="detail-row"><span><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 12-9 12S3 17 3 10a9 9 0 1 1 18 0Z"/><circle cx="12" cy="10" r="3"/></svg></span>${escapeHtml(task.location)}</p><p class="detail-row"><span><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 2v6M17 2v6M3 11h18"/></svg></span>${escapeHtml(task.time)}</p>${review ? "" : `<div class="poster-row"><span class="avatar">👤</span><span><p>Posted by ${escapeHtml(task.poster || "gator_user")}</p><small>${escapeHtml(task.posted || "Just now")}</small></span>${ownerView ? "" : `<button class="outline-button" type="button" data-action="message">Message</button>`}</div>`}<section class="detail-section"><h3>Description</h3><p>${escapeHtml(task.description)}</p></section><section class="detail-section"><h3>Location</h3><div class="detail-map" id="detail-map" role="region" aria-label="Map showing ${escapeHtml(task.location)}"></div></section>${review ? "" : `<button class="primary-button offer-button" type="button" data-action="complete">${ownerView ? "Complete Task & Review Runner" : "Complete Task & Review Submitter"}</button>`}`;
+  return `${imageMarkup(task,"hero-image")}<div class="detail-heading"><h2>${escapeHtml(task.title)}</h2><strong>${escapeHtml(task.reward || task.summary || "$8")}</strong></div><p class="detail-row"><span><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 12-9 12S3 17 3 10a9 9 0 1 1 18 0Z"/><circle cx="12" cy="10" r="3"/></svg></span>${escapeHtml(task.location)}</p><p class="detail-row"><span><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 2v6M17 2v6M3 11h18"/></svg></span>${escapeHtml(task.time)}</p>${Number.isFinite(taskDuration(task)) ? `<p class="detail-row">Estimated duration: ${escapeHtml(task.durationMinutes)} min</p>` : ""}${review ? "" : `<div class="poster-row"><span class="avatar">👤</span><span><p>Posted by ${escapeHtml(task.poster || "gator_user")}</p><small>${escapeHtml(task.posted || "Just now")}</small></span>${ownerView ? "" : `<button class="outline-button" type="button" data-action="message">Message</button>`}</div>`}<section class="detail-section"><h3>Description</h3><p>${escapeHtml(task.description)}</p></section><section class="detail-section"><h3>Location</h3><div class="detail-map" id="detail-map" role="region" aria-label="Map showing ${escapeHtml(task.location)}"></div></section>${review ? "" : `<button class="primary-button offer-button" type="button" data-action="complete">${ownerView ? "Complete Task & Review Runner" : "Complete Task & Review Submitter"}</button>`}`;
 }
 
 // Small real map for the review and detail pages; falls back to matching the location text against places.json for older tasks without coordinates.
@@ -360,12 +377,12 @@ function renderRatingReview() {
 
 function readForm(form) {
   const data = new FormData(form);
-  return {id:`task-${Date.now()}`,title:data.get("title").trim(),summary:`$${data.get("reward")}`,reward:`$${data.get("reward")}`,category:data.get("category"),description:data.get("description").trim(),location:data.get("location").trim(),...(data.get("lat") && data.get("lng") ? {lat:Number(data.get("lat")),lng:Number(data.get("lng"))} : {}),time:data.get("time").trim(),cardTime:data.get("time").trim(),poster:"you",posted:"Just now",createdByMe:true,icon:data.get("category") === "Study" ? "▭" : "◇"};
+  return {durationMinutes: data.get("durationMinutes") ? Number(data.get("durationMinutes")) : null,id:`task-${Date.now()}`,title:data.get("title").trim(),summary:`$${data.get("reward")}`,reward:`$${data.get("reward")}`,category:data.get("category"),description:data.get("description").trim(),location:data.get("location").trim(),...(data.get("lat") && data.get("lng") ? {lat:Number(data.get("lat")),lng:Number(data.get("lng"))} : {}),time:data.get("time").trim(),cardTime:data.get("time").trim(),poster:"you",posted:"Just now",createdByMe:true,icon:data.get("category") === "Study" ? "▭" : "◇"};
 }
 
 function fillForm(form, draft) {
   if (!draft) return;
-  ["title","description","location","time","reward","lat","lng"].forEach(name => { if (form.elements[name] && draft[name] != null) form.elements[name].value = name === "reward" ? String(draft.reward).replace("$","") : draft[name]; });
+  ["title","description","location","time","reward","lat","lng","durationMinutes"].forEach(name => { if (form.elements[name] && draft[name] != null) form.elements[name].value = name === "reward" ? String(draft.reward).replace("$","") : draft[name]; });
   const category = form.querySelector(`[name="category"][value="${CSS.escape(draft.category || "Errand")}"]`);
   if (category) category.checked = true;
 }
