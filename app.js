@@ -124,7 +124,7 @@ function renderDetail() {
   const task = getAllTasks().find(item => item.id === id) || sampleTasks[0];
   $("#task-detail").innerHTML = detailMarkup(task,false,ownerView);
   window.addEventListener("load",() => showTaskMap(task));
-  document.querySelectorAll("[data-action]").forEach(button => button.addEventListener("click", () => showToast(button.dataset.action === "message" ? `Opening chat with ${task.poster || "poster"}…` : "Offer sent to the task poster!")));
+  document.querySelectorAll("[data-action]").forEach(button => button.addEventListener("click", () => openChatForTask(task,button.dataset.action === "offer")));
 }
 
 function readForm(form) {
@@ -427,3 +427,130 @@ function renderMap() {
   draw();
 }
 if (page === "map") renderMap();
+
+// ---- Chats (stored on this device until profiles and a database exist) ----
+const CHAT_KEY = "gatorBoardChats";
+const CHAT_LOCK_MS = 7 * 24 * 60 * 60 * 1000; // a chat locks after 7 days without messages, or once the task is completed
+
+function seedChats() {
+  const now = Date.now(), minutes = n => now - n * 60000, day = 86400000;
+  const chat = (id, taskId, taskTitle, name, unread, messages, completed = false) => ({id,taskId,taskTitle,name,unread,completed,messages});
+  return [
+    chat("chat-sophia","publix","Pick up groceries at Publix","Sophia M.",2,[{from:"me",text:"I can pick those up for you!",at:minutes(60)},{from:"them",text:"Thanks! See you at Hume Hall.",at:minutes(3)}]),
+    chat("chat-ethan","study-packet","Micro Study Edge Packet","Ethan R.",1,[{from:"me",text:"Offer sent for your study packet.",at:minutes(120)},{from:"them",text:"Is Marston at 3 still good for you?",at:minutes(29)}]),
+    chat("chat-maya","starbucks","Get a coffee from Starbucks","Maya P.",0,[{from:"them",text:"Could you grab a coffee for me?",at:now - day - 3600000},{from:"me",text:"I can grab that on my way!",at:now - day + 60000}]),
+    chat("chat-jordan","","Pick up textbooks","Jordan L.",0,[{from:"them",text:"Can you grab my textbooks?",at:now - 3 * day - 3600000},{from:"me",text:"Perfect, see you there.",at:now - 3 * day}]),
+    chat("chat-alex","package","Pick up a package","Alex T.",0,[{from:"me",text:"Package picked up!",at:now - day - 7200000},{from:"them",text:"Thank you so much for the help!",at:now - day}],true)
+  ];
+}
+
+function getChats() {
+  try { const saved = JSON.parse(localStorage.getItem(CHAT_KEY)); if (Array.isArray(saved)) return saved; } catch {}
+  const seeded = seedChats();
+  saveChats(seeded);
+  return seeded;
+}
+function saveChats(chats) { localStorage.setItem(CHAT_KEY,JSON.stringify(chats)); }
+const lastMessage = chat => chat.messages[chat.messages.length - 1];
+function lockReason(chat) {
+  if (chat.completed) return "This task was completed, so the chat is locked.";
+  const last = lastMessage(chat);
+  if (last && Date.now() - last.at > CHAT_LOCK_MS) return "This chat was locked after 7 days without messages.";
+  return "";
+}
+const isLocked = chat => Boolean(lockReason(chat));
+const initials = name => name.split(/\s+/).map(part => part[0]).join("").slice(0,2).toUpperCase();
+
+function chatTime(at) {
+  const date = new Date(at), today = new Date();
+  const days = Math.round((new Date(today.getFullYear(),today.getMonth(),today.getDate()) - new Date(date.getFullYear(),date.getMonth(),date.getDate())) / 86400000);
+  if (days <= 0) return date.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});
+  if (days === 1) return "Yesterday";
+  if (days < 7) return date.toLocaleDateString([],{weekday:"short"});
+  return date.toLocaleDateString([],{month:"short",day:"numeric"});
+}
+
+// "Offer to Complete" / "Message" on a task: reuse the chat for that task or start one with its poster.
+function openChatForTask(task, offer) {
+  const chats = getChats();
+  let chat = chats.find(item => item.taskId === task.id);
+  if (!chat) {
+    chat = {id:`chat-${Date.now()}`,taskId:task.id,taskTitle:task.title,name:task.poster || "Task poster",unread:0,completed:false,messages:[]};
+    chats.unshift(chat);
+  }
+  if (offer && !isLocked(chat) && !chat.messages.some(message => message.offer)) chat.messages.push({from:"me",text:`Hi! I'd like to complete "${task.title}".`,at:Date.now(),offer:true});
+  saveChats(chats);
+  location.href = `chat.html?id=${encodeURIComponent(chat.id)}`;
+}
+
+function renderChat() {
+  const id = new URLSearchParams(location.search).get("id");
+  if (id) renderThread(id); else renderChatList();
+}
+
+function renderChatList() {
+  $("#chat-list-view").hidden = false;
+  const list = $("#chat-list"), search = $("#chat-search");
+  let editing = false;
+  const draw = () => {
+    const query = search.value.trim().toLowerCase();
+    const all = getChats();
+    const chats = all.filter(chat => `${chat.name} ${chat.taskTitle} ${lastMessage(chat) ? lastMessage(chat).text : ""}`.toLowerCase().includes(query))
+      .sort((a,b) => (lastMessage(b) ? lastMessage(b).at : 0) - (lastMessage(a) ? lastMessage(a).at : 0));
+    const unread = all.reduce((sum,chat) => sum + (isLocked(chat) ? 0 : chat.unread),0);
+    $("#chat-unread").textContent = unread ? `${unread} unread` : "";
+    $("#chat-empty").hidden = chats.length > 0;
+    list.innerHTML = chats.map(chat => {
+      const last = lastMessage(chat), locked = isLocked(chat), unreadBadge = chat.unread && !locked;
+      const preview = last ? `${last.from === "me" ? "You: " : ""}${last.text}` : "No messages yet";
+      return `<div class="chat-row"><a class="chat-card${locked ? " is-locked" : ""}" href="chat.html?id=${encodeURIComponent(chat.id)}"><span class="chat-avatar">${escapeHtml(initials(chat.name))}</span><span class="chat-main"><span class="chat-top"><strong>${escapeHtml(chat.name)}</strong><time>${last ? chatTime(last.at) : ""}</time></span><span class="chat-task">${escapeHtml(chat.taskTitle)}</span><span class="chat-preview${unreadBadge ? " is-unread" : ""}"><span>${escapeHtml(preview)}</span>${unreadBadge ? `<b class="chat-badge">${chat.unread}</b>` : ""}</span></span>${locked ? '<span class="chat-lock"><span aria-hidden="true">🔒</span>Locked</span>' : ""}</a>${editing ? `<button type="button" class="chat-delete" data-id="${escapeHtml(chat.id)}" aria-label="Delete chat with ${escapeHtml(chat.name)}">✕</button>` : ""}</div>`;
+    }).join("");
+  };
+  search.addEventListener("input",draw);
+  $("#chat-edit").addEventListener("click",event => { editing = !editing; event.currentTarget.textContent = editing ? "Done" : "Edit"; draw(); });
+  list.addEventListener("click",event => {
+    const button = event.target.closest(".chat-delete");
+    if (!button) return;
+    saveChats(getChats().filter(chat => chat.id !== button.dataset.id));
+    draw();
+  });
+  draw();
+}
+
+function renderThread(id) {
+  const chats = getChats(), chat = chats.find(item => item.id === id);
+  if (!chat) { location.replace("chat.html"); return; }
+  $("#chat-thread-view").hidden = false;
+  if (chat.unread) { chat.unread = 0; saveChats(chats); }
+  const log = $("#chat-log"), form = $("#chat-form"), input = form.elements.message, notice = $("#chat-lock-note");
+  $("#thread-name").textContent = chat.name;
+  $("#thread-task").textContent = chat.taskTitle;
+  const draw = () => {
+    const locked = isLocked(chat);
+    log.innerHTML = chat.messages.map(message => `<div class="chat-bubble ${message.from === "me" ? "is-mine" : "is-theirs"}"><p>${escapeHtml(message.text)}</p><time>${chatTime(message.at)}</time></div>`).join("") || '<p class="chat-empty-thread">Say hello to start the conversation.</p>';
+    notice.hidden = !locked;
+    notice.textContent = lockReason(chat);
+    input.disabled = locked;
+    form.querySelector("button").disabled = locked;
+    input.placeholder = locked ? "Chat locked" : "Write a message…";
+    $("#complete-task").hidden = locked;
+    log.lastElementChild && log.lastElementChild.scrollIntoView({block:"end"});
+  };
+  form.addEventListener("submit",event => {
+    event.preventDefault();
+    const text = input.value.trim();
+    if (!text || isLocked(chat)) return;
+    chat.messages.push({from:"me",text,at:Date.now()});
+    saveChats(chats);
+    input.value = "";
+    draw();
+  });
+  $("#complete-task").addEventListener("click",() => {
+    chat.completed = true;
+    saveChats(chats);
+    showToast("Task marked complete. Chat locked.");
+    draw();
+  });
+  draw();
+}
+if (page === "chat") renderChat();

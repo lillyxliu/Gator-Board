@@ -1,0 +1,17 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#f8f3e7"><title>Chat | Gator Board</title><link rel="stylesheet" href="styles.css"><script src="app.js" defer></script></head>
+<body data-page="chat">
+<main class="app-shell chat-page" id="chat-list-view" hidden>
+<header class="home-header"><h1>GatorBoard</h1><button class="icon-button notification" type="button" aria-label="Notifications">♧<span></span></button></header>
+<label class="search-box"><span aria-hidden="true">⌕</span><input id="chat-search" type="search" placeholder="Search chats..." autocomplete="off" /></label>
+<div class="chat-heading"><div><h2>Chats</h2><span id="chat-unread"></span></div><button type="button" id="chat-edit">Edit</button></div>
+<div class="chat-list" id="chat-list" aria-live="polite"></div>
+<p class="empty-state" id="chat-empty" hidden>No chats yet. Offer to complete a task to start one.</p>
+</main>
+<main class="app-shell chat-page chat-thread" id="chat-thread-view" hidden>
+<header class="page-header"><a href="chat.html" aria-label="Back to chats">‹</a><h1><span id="thread-name"></span><small id="thread-task"></small></h1><span></span></header>
+<button type="button" class="chat-complete" id="complete-task">Mark task complete</button>
+<div class="chat-log" id="chat-log" aria-live="polite"></div>
+<p class="chat-lock-note" id="chat-lock-note" hidden></p>
+<form class="chat-form" id="chat-form"><input name="message" autocomplete="off" placeholder="Write a message…" aria-label="Message"><button type="submit" aria-label="Send">➤</button></form>
+</main>
+<nav class="bottom-nav" aria-label="Main navigation"><a class="nav-item" href="index.html#home"><span class="nav-icon">⌂</span><span>Home</span></a><a class="nav-item" href="map.html"><span class="nav-icon">⌖</span><span>Map</span></a><a class="nav-item add-nav" href="add-task.html" aria-label="Add a task"><span>＋</span></a><a class="nav-item is-current" href="chat.html" aria-current="page"><span class="nav-icon">▢</span><span>Chat</span></a><button class="nav-item" type="button" data-placeholder="Profile"><span class="nav-icon">♙</span><span>Profile</span></button></nav><div class="toast" role="status" aria-live="polite"></div></body></html>
