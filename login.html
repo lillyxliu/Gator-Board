@@ -117,7 +117,7 @@
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         const identifier = usernameInput.value.trim();
-        const password = passwordInput.value();
+        const password = passwordInput.value;
 
         loginError.hidden = true;
 
@@ -133,8 +133,8 @@
           const result = await response.json();
 
           if (!response.ok) {
-            loginError.textContent = result,error;
-            loginERror.hidden = false;
+            loginError.textContent = result.error;
+            loginError.hidden = false;
             return;
           }
 
