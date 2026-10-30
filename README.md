@@ -1,6 +1,6 @@
 # Gator Board
 
-Gator Board is a mobile-first task exchange for University of Florida students. It is built with HTML, CSS, and vanilla JavaScript and can be hosted directly on GitHub Pages.
+Gator Board is a mobile-first task exchange for University of Florida students. It is built with HTML, CSS, JavaScript, Node.js, Express, PostgreSQL, and Docker.
 
 ## Run instructions
 
