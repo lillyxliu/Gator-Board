@@ -1,0 +1,29 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://gatorboard:gatorboard_dev@db:5432/gatorboard
+      PORT: 3000
+    volumes:
+      - session_secrets:/app/secrets
+    depends_on:
+      db:
+        condition: service_healthy
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: gatorboard
+      POSTGRES_PASSWORD: gatorboard_dev
+      POSTGRES_DB: gatorboard
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gatorboard -d gatorboard"]
+      interval: 5s
+      retries: 10
+volumes:
+  postgres_data:
+  session_secrets:

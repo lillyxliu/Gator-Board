@@ -1,12 +1,34 @@
 const STORAGE_KEY = "gatorBoardTasks";
 const DRAFT_KEY = "gatorBoardDraft";
 
-function syncHomeEntry() {
+// function syncHomeEntry() {
+//   if (document.body.dataset.page !== "home") return;
+//   const showApp = window.location.hash === "#home" || window.location.hash === "#published";
+//   document.querySelector("#welcome-screen").hidden = showApp;
+//   document.querySelector("#home-app").hidden = !showApp;
+//   document.querySelector("#home-nav").hidden = !showApp;
+// }
+
+async function syncHomeEntry() {
   if (document.body.dataset.page !== "home") return;
-  const showApp = window.location.hash === "#home" || window.location.hash === "#published";
-  document.querySelector("#welcome-screen").hidden = showApp;
-  document.querySelector("#home-app").hidden = !showApp;
-  document.querySelector("#home-nav").hidden = !showApp;
+
+  try {
+    const response = await fetch("/api/me");
+
+    if (!response.ok) {
+      window.location.href = "login.html";
+      return;
+    }
+
+    const showApp = 
+      window.location.hash === "#home" ||
+      window.location.hash === "#published";
+    document.querySelector("#welcome-screen").hidden = showApp;
+    document.querySelector("#home-app").hidden = !showApp;
+    document.querySelector("#home-nav").hidden = !showApp;
+  } catch {
+    window.location.href = "auth.html";
+  }
 }
 
 const sampleTasks = [

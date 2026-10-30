@@ -4,32 +4,76 @@
     <meta charset = "utf-8" />
     <meta name = "viewport" content = "width=device-width, initial-scale = 1" />
     <meta name = "theme-color" content = "#ffffff" />
-    <title>Welcome | Gator Board</title>
+    <title>Log In | Gator Board</title>
     <link rel="stylesheet" href="styles.css" />
 
     <style>
-        .auth-buttons {
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-            width: 100%;
-            max-width: 360px;
-            margin-top: 24px;
+        .login-form {
+          width: 100%;
+          max-width: 360px;
+          text-align: left;
         }
 
-        .auth-buttons a {
-            display: block;
-            padding: 12px;
-            border-radius: 8px;
-            background: #244c37;
-            color: #f8f3e7;
-            text-align: center;
-            text-decoration: none;
-            font-weight: 600;
+        .login-form label {
+          display: block;
+          margin: 14px 0 6px;
+          font-weight: 600;
         }
 
-        .auth-buttons a:hover {
-            opacity: 0.8;
+        .login-form .field-control {
+          width: 100%;
+        }
+
+        .login-form .flow-button {
+          width: 100%;
+          margin-top: 24px;
+          border: none;
+          cursor: pointer;
+          font: inherit;
+          transition: opacity 0.2s ease;
+        }
+
+        .login-form .flow-button:hover {
+          opacity: 0.8;
+        }
+
+        .flow-page .signup-link {
+          font-size: 14px;
+          margin-top: 14px;
+          text-align: center;
+        }
+
+        .signup-link a {
+          color: #1a73e8;
+          font-weight: 600;
+        }
+
+        .error-message {
+          color: #d32f2f;
+          font-size: 0.875rem;
+          margin-top: 4px;
+        }
+
+        .password-field {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .password-field input {
+          flex: 1;
+          min-width: 0;
+        }
+
+        .show-button {
+          border: 1px solid #d9dfd9;
+          border-radius: 8px;
+          background: #d9dfd9;
+          padding: 10px;
+          transition: opacity 0.2s ease;
+        }
+        .show-button.active {
+          opacity: 0.4;
         }
     </style>
   </head>
@@ -37,12 +81,69 @@
   <body>
     <main class="flow-page">
       <h1>Gator Board</h1>
-      <h2>Welcome!</h2>
+      <h2>Log In</h2>
 
-      <div class = "auth-buttons">
-        <a href = "signup.html">Sign Up</a>
-        <a href = "login.html">Log In</a>
+      <form id = "login-form" class = "login-form">
+        <label for = "username">Username or UF Email</label>
+        <input class = "field-control" type = "text" id = "username" placeholder = "Username or UF Email" required />
+        <label for = "password">Password</label>
+        <div class = "password-field">
+          <input class = "field-control" type = "password" id = "password" placeholder = "Password" required />
+          <button class = "show-button" type = "button" target = "password">Show</button>
         </div>
+        <p id = "login-error" class = "error-message" role = "alert" hidden></p>
+        <button class = "flow-button" type = "submit">Log In</button>
+        <p class = "signup-link">Don't have an account? <a href = "signup.html">Sign Up</a></p>
+      </form>
     </main>
+
+    <script>
+      const form = document.querySelector("#login-form");
+      const usernameInput = document.querySelector("#username");
+      const passwordInput = document.querySelector("#password");
+      const loginError = document.querySelector("#login-error");
+
+    document.querySelectorAll(".show-button").forEach(button => {
+      button.addEventListener("click", () => {
+        const targetInput = document.getElementById(button.getAttribute("target"));
+        const visible = targetInput.type === "password";
+
+        targetInput.type = visible ? "text" : "password";
+        button.classList.toggle("active", visible);
+        button.setAttribute("aria-pressed", String(visible));
+      });
+    });
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const identifier = usernameInput.value.trim();
+        const password = passwordInput.value();
+
+        loginError.hidden = true;
+
+        try {
+          const response = await fetch("/api/login", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({identifier, password})
+          });
+
+          const result = await response.json();
+
+          if (!response.ok) {
+            loginError.textContent = result,error;
+            loginERror.hidden = false;
+            return;
+          }
+
+          window.location.href = "index.html#home";
+        } catch {
+          loginError.textContent = "Unable to connect to server.";
+          loginError.hidden = false;
+        }
+      });
+    </script>
   </body>
 </html>
