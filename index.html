@@ -28,6 +28,8 @@
       </section>
       <section class="task-section">
         <div class="section-heading"><h2>Nearby Tasks</h2><button type="button" id="my-tasks">My Tasks ›</button></div>
+        <label class="sort-control" for="task-sort">Sort by <select id="task-sort"><option value="newest">Newest first</option><option value="reward-high">Reward: High to Low</option><option value="reward-low">Reward: Low to High</option><option value="nearest">Nearest first</option></select></label>
+        <p class="sort-status" id="sort-status" role="status"></p>
         <div class="task-list" id="task-list" aria-live="polite"></div>
         <p class="empty-state" id="empty-state" hidden>No tasks match your search.</p>
       </section>

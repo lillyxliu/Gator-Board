@@ -65,11 +65,41 @@ function imageMarkup(task, className = "task-image") {
   return `<span class="${className}" aria-hidden="true">${taskIcon(task)}</span>`;
 }
 
+function taskRewardAmount(task) {
+  const value = String(task.reward ?? task.summary ?? "").trim();
+  return /^\$?\d+(?:\.\d+)?$/.test(value) ? Number(value.replace("$", "")) : null;
+}
+
+function taskCreatedTime(task) {
+  const fromId = /^task-(\d+)$/.exec(task.id || "");
+  return Number(task.createdAt) || Date.parse(task.createdAt) || (fromId ? Number(fromId[1]) : 0);
+}
+
+function taskDistanceMiles(a, b) {
+  const radians = degrees => degrees * Math.PI / 180;
+  const latitude = radians(b.lat-a.lat), longitude = radians(b.lng-a.lng);
+  const h = Math.sin(latitude/2)**2 + Math.cos(radians(a.lat))*Math.cos(radians(b.lat))*Math.sin(longitude/2)**2;
+  return 3958.8 * 2 * Math.asin(Math.sqrt(Math.min(1,h)));
+}
+
 function renderHome() {
   const taskList = $("#task-list");
   const search = $("#task-search");
   let selectedCategory = "All";
   let mineOnly = false;
+  const sort = $("#task-sort");
+  const status = $("#sort-status");
+  let userLocation = null;
+  let places = [];
+  function distance(task) {
+    if (!userLocation) return Infinity;
+    let spot = Number.isFinite(task.lat) && Number.isFinite(task.lng) ? task : null;
+    if (!spot) {
+      const name = (task.location || "").replace(/\(.*?\)/g, "").trim().toLowerCase();
+      spot = places.find(place => place.n.toLowerCase() === name);
+    }
+    return spot ? taskDistanceMiles(userLocation, spot) : Infinity;
+  }
 
   function update() {
     const query = search.value.trim().toLowerCase();
@@ -79,8 +109,50 @@ function renderHome() {
       return categoryMatches && textMatches && (!mineOnly || task.createdByMe);
     });
     taskList.innerHTML = tasks.map(task => `<a class="task-card" href="task-detail.html?id=${encodeURIComponent(task.id)}">${imageMarkup(task)}<span class="task-card-content"><h3>${escapeHtml(task.title)}</h3><p class="task-meta"><strong>${escapeHtml(task.summary || task.reward || "$8")}</strong> · ${escapeHtml(task.category)}</p><p class="task-meta"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 12-9 12S3 17 3 10a9 9 0 1 1 18 0Z"/><circle cx="12" cy="10" r="3"/></svg> &nbsp;${escapeHtml(task.location)}${task.distance ? ` (${escapeHtml(task.distance)})` : ""}</p><p class="task-meta"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 3"/></svg> &nbsp;${escapeHtml(task.cardTime || task.time)}</p></span></a>`).join("");
+    const cards = [...taskList.children];
+    const ordered = tasks.map((task,index) => ({task,index,distance:distance(task)}));
+    ordered.sort((a,b) => {
+      if (sort.value === "nearest") return (a.distance === b.distance ? 0 : a.distance - b.distance) || a.index - b.index;
+      if (sort.value.startsWith("reward")) {
+        const first = taskRewardAmount(a.task), second = taskRewardAmount(b.task);
+        if (first === null || second === null) return first === second ? a.index-b.index : first === null ? 1 : -1;
+        return (sort.value === "reward-high" ? second-first : first-second) || a.index-b.index;
+      }
+      return taskCreatedTime(b.task)-taskCreatedTime(a.task) || a.index-b.index;
+    });
+    ordered.forEach(item => {
+      const card = cards[item.index];
+      if (sort.value === "nearest") {
+        const locationLine = card.querySelectorAll(".task-meta")[1];
+        const label = Number.isFinite(item.distance) ? `${item.distance.toFixed(1)} mi away` : "Distance unavailable";
+        const icon = locationLine.querySelector("svg");
+        locationLine.textContent = ` ${item.task.location} (${label})`;
+        if (icon) locationLine.prepend(icon);
+      }
+      taskList.append(card);
+    });
     $("#empty-state").hidden = tasks.length !== 0;
   }
+
+  sort.addEventListener("change", async () => {
+    status.textContent = "";
+    if (sort.value !== "nearest" || userLocation) { update(); return; }
+    if (!navigator.geolocation) { status.textContent = "Location is unavailable. Showing newest tasks."; sort.value="newest"; update(); return; }
+    sort.disabled = true;
+    status.textContent = "Finding your location…";
+    try {
+      const [position, data] = await Promise.all([
+        new Promise((resolve,reject) => navigator.geolocation.getCurrentPosition(resolve,reject,{timeout:10000,maximumAge:60000})),
+        loadPlaces()
+      ]);
+      userLocation = {lat:position.coords.latitude,lng:position.coords.longitude};
+      places = data;
+      status.textContent = "Sorted by straight-line distance. Tasks without a known location appear last.";
+    } catch {
+      sort.value = "newest";
+      status.textContent = "Could not access your location. Allow location access and try again. Showing newest tasks.";
+    } finally { sort.disabled=false; update(); }
+  });
 
   search.addEventListener("input", update);
   document.querySelectorAll(".category-button").forEach(button => button.addEventListener("click", () => {
