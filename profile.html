@@ -3,13 +3,35 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#ffffff" />
-    <title>Log in / Sign up | Gator Board</title>
+    <meta name="theme-color" content="#f8f3e7" />
+    <title>Profile | Gator Board</title>
     <link rel="stylesheet" href="styles.css" />
+    <script src="app.js" defer></script>
   </head>
-  <body>
-    <main class="flow-page">
-      <h1>Log in or sign up</h1>
+  <body data-page="profile">
+    <main class="app-shell profile-page">
+      <header class="page-header">
+        <a href="index.html#home" aria-label="Back to home">‹</a>
+        <h1>Profile</h1>
+        <span></span>
+      </header>
+      <section class="profile-summary" id="profile-summary" aria-live="polite">
+        <div class="profile-avatar">♙</div>
+        <h2>Loading profile…</h2>
+      </section>
+      <section class="profile-reviews" aria-labelledby="reviews-heading">
+        <h2 id="reviews-heading">Reviews</h2>
+        <div id="review-list" class="review-list"></div>
+      </section>
+      <button class="secondary-button profile-logout" id="logout-button" type="button">Log Out</button>
     </main>
+    <nav class="bottom-nav" aria-label="Main navigation">
+      <a class="nav-item" href="index.html#home"><span class="nav-icon">⌂</span><span>Home</span></a>
+      <a class="nav-item" href="map.html"><span class="nav-icon">⌖</span><span>Map</span></a>
+      <a class="nav-item add-nav" href="add-task.html" aria-label="Add a task"><span>＋</span></a>
+      <button class="nav-item" type="button" data-placeholder="Chat"><span class="nav-icon">▢</span><span>Chat</span></button>
+      <a class="nav-item is-current" href="profile.html"><span class="nav-icon">♙</span><span>Profile</span></a>
+    </nav>
+    <div class="toast" role="status" aria-live="polite"></div>
   </body>
 </html>

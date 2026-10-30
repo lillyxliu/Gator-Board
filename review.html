@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f8f3e7" />
+    <title>Leave a Review | Gator Board</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body data-page="rating-review">
+    <main class="app-shell review-form-page">
+      <header class="page-header">
+        <a href="index.html#home" aria-label="Back to home">‹</a>
+        <h1>Leave a Review</h1>
+        <span></span>
+      </header>
+      <section class="review-form-card" aria-labelledby="review-task-title">
+        <h2 id="review-task-title">How did it go?</h2>
+        <p id="review-task-subtitle">Your feedback helps build a better Gator Board community.</p>
+        <fieldset class="rating-fieldset">
+          <legend>Star rating <span aria-hidden="true">*</span></legend>
+          <div class="star-rating" role="radiogroup" aria-label="Star rating">
+            <button type="button" data-rating="1" aria-label="1 star">★</button>
+            <button type="button" data-rating="2" aria-label="2 stars">★</button>
+            <button type="button" data-rating="3" aria-label="3 stars">★</button>
+            <button type="button" data-rating="4" aria-label="4 stars">★</button>
+            <button type="button" data-rating="5" aria-label="5 stars">★</button>
+          </div>
+          <p class="form-error" id="rating-error" role="alert" hidden></p>
+        </fieldset>
+        <label class="form-label review-comment">
+          Comment <span class="optional-label">(optional)</span>
+          <textarea id="review-comment" maxlength="1000" placeholder="Share a little about your experience"></textarea>
+        </label>
+        <button class="primary-button review-submit" id="submit-review" type="button">Submit Review</button>
+      </section>
+    </main>
+    <nav class="bottom-nav" aria-label="Main navigation">
+      <a class="nav-item" href="index.html#home"><span class="nav-icon">⌂</span><span>Home</span></a>
+      <a class="nav-item" href="map.html"><span class="nav-icon">⌖</span><span>Map</span></a>
+      <a class="nav-item add-nav" href="add-task.html" aria-label="Add a task"><span>＋</span></a>
+      <button class="nav-item" type="button" data-placeholder="Chat"><span class="nav-icon">▢</span><span>Chat</span></button>
+      <a class="nav-item is-current" href="profile.html"><span class="nav-icon">♙</span><span>Profile</span></a>
+    </nav>
+    <div class="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>

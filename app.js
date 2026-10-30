@@ -97,7 +97,7 @@ function renderHome() {
 }
 
 function detailMarkup(task, review = false, ownerView = false) {
-  return `${imageMarkup(task,"hero-image")}<div class="detail-heading"><h2>${escapeHtml(task.title)}</h2><strong>${escapeHtml(task.reward || task.summary || "$8")}</strong></div><p class="detail-row"><span>⌖</span>${escapeHtml(task.location)}</p><p class="detail-row"><span>▣</span>${escapeHtml(task.time)}</p>${review ? "" : `<div class="poster-row"><span class="avatar">👤</span><span><p>Posted by ${escapeHtml(task.poster || "gator_user")}</p><small>${escapeHtml(task.posted || "Just now")}</small></span>${ownerView ? "" : `<button class="outline-button" type="button" data-action="message">Message</button>`}</div>`}<section class="detail-section"><h3>Description</h3><p>${escapeHtml(task.description)}</p></section><section class="detail-section"><h3>Location</h3><div class="detail-map" id="detail-map" role="region" aria-label="Map showing ${escapeHtml(task.location)}"></div></section>${review ? "" : ownerView ? `<a class="secondary-button return-home-button" href="index.html#home">Return Home</a>` : `<button class="primary-button offer-button" type="button" data-action="offer">Offer to Complete</button>`}`;
+  return `${imageMarkup(task,"hero-image")}<div class="detail-heading"><h2>${escapeHtml(task.title)}</h2><strong>${escapeHtml(task.reward || task.summary || "$8")}</strong></div><p class="detail-row"><span>⌖</span>${escapeHtml(task.location)}</p><p class="detail-row"><span>▣</span>${escapeHtml(task.time)}</p>${review ? "" : `<div class="poster-row"><span class="avatar">👤</span><span><p>Posted by ${escapeHtml(task.poster || "gator_user")}</p><small>${escapeHtml(task.posted || "Just now")}</small></span>${ownerView ? "" : `<button class="outline-button" type="button" data-action="message">Message</button>`}</div>`}<section class="detail-section"><h3>Description</h3><p>${escapeHtml(task.description)}</p></section><section class="detail-section"><h3>Location</h3><div class="detail-map" id="detail-map" role="region" aria-label="Map showing ${escapeHtml(task.location)}"></div></section>${review ? "" : `<button class="primary-button offer-button" type="button" data-action="complete">${ownerView ? "Complete Task & Review Runner" : "Complete Task & Review Submitter"}</button>`}`;
 }
 
 // Small real map for the review and detail pages; falls back to matching the location text against places.json for older tasks without coordinates.
@@ -124,7 +124,166 @@ function renderDetail() {
   const task = getAllTasks().find(item => item.id === id) || sampleTasks[0];
   $("#task-detail").innerHTML = detailMarkup(task,false,ownerView);
   window.addEventListener("load",() => showTaskMap(task));
-  document.querySelectorAll("[data-action]").forEach(button => button.addEventListener("click", () => showToast(button.dataset.action === "message" ? `Opening chat with ${task.poster || "poster"}…` : "Offer sent to the task poster!")));
+  document.querySelectorAll("[data-action]").forEach(button => button.addEventListener("click", () => {
+    if (button.dataset.action === "complete") {
+      openReviewModal(task, ownerView);
+      return;
+    }
+    showToast(`Opening chat with ${task.poster || "poster"}…`);
+  }));
+}
+
+async function openReviewModal(task, ownerView) {
+  let revieweeId = ownerView ? task.runnerId : task.submitterId;
+  if (!ownerView && !Number.isInteger(task.runnerId)) {
+    const meResponse = await fetch("/api/me");
+    if (meResponse.status === 401) {
+      location.href = "login.html";
+      return;
+    }
+    if (!meResponse.ok) {
+      showToast("Unable to identify the errand runner.");
+      return;
+    }
+    const {user} = await meResponse.json();
+    task.runnerId = user.id;
+    const savedTasks = getSavedTasks();
+    const savedTask = savedTasks.find(item => item.id === task.id);
+    if (savedTask) {
+      savedTask.runnerId = user.id;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(savedTasks));
+    }
+  }
+  const modal = $("#review-modal");
+  let selectedRating = 0;
+  $("#modal-review-subtitle").textContent = ownerView ? "Rate the errand runner who completed this task." : "Rate the task submitter who posted this task.";
+  $("#modal-review-comment").value = "";
+  $("#modal-rating-error").hidden = true;
+  document.querySelectorAll("[data-modal-rating]").forEach(button => {
+    button.classList.remove("is-selected");
+    button.onclick = () => {
+      selectedRating = Number(button.dataset.modalRating);
+      document.querySelectorAll("[data-modal-rating]").forEach(star => star.classList.toggle("is-selected", Number(star.dataset.modalRating) <= selectedRating));
+      $("#modal-rating-error").hidden = true;
+    };
+  });
+  modal.hidden = false;
+  $("#modal-submit-review").onclick = async () => {
+    if (!selectedRating) {
+      $("#modal-rating-error").textContent = "Select a star rating before submitting.";
+      $("#modal-rating-error").hidden = false;
+      return;
+    }
+    if (!Number.isInteger(revieweeId)) {
+      $("#modal-rating-error").textContent = "This task is not assigned to a submitter or errand runner yet.";
+      $("#modal-rating-error").hidden = false;
+      return;
+    }
+    const submit = $("#modal-submit-review");
+    submit.disabled = true;
+    try {
+      const response = await fetch("/api/reviews", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({taskId: task.id, revieweeId, rating: selectedRating, comment: $("#modal-review-comment").value})
+      });
+      const result = await response.json();
+      if (response.status === 401) {
+        location.href = "login.html";
+        return;
+      }
+      if (!response.ok) throw new Error(result.error || "Unable to save review.");
+      modal.hidden = true;
+      showToast("Review submitted.");
+    } catch (error) {
+      console.error("Review error:", error);
+      $("#modal-rating-error").textContent = error.message;
+      $("#modal-rating-error").hidden = false;
+    } finally {
+      submit.disabled = false;
+    }
+  };
+}
+
+async function renderProfile() {
+  const logoutButton = $("#logout-button");
+  logoutButton.addEventListener("click", async () => {
+    logoutButton.disabled = true;
+    try {
+      const response = await fetch("/api/logout", {method: "POST"});
+      if (!response.ok) throw new Error("Logout failed.");
+      location.href = "login.html";
+    } catch (error) {
+      console.error("Logout error:", error);
+      showToast("Unable to log out. Please try again.");
+      logoutButton.disabled = false;
+    }
+  });
+
+  try {
+    const response = await fetch("/api/profile");
+    if (response.status === 401) {
+      location.href = "login.html";
+      return;
+    }
+    if (!response.ok) throw new Error("Profile request failed");
+    const {profile} = await response.json();
+    const rating = Number(profile.rating);
+    $("#profile-summary").innerHTML = `<div class="profile-avatar">♙</div><h2>${escapeHtml(profile.username)}</h2><p>${escapeHtml(profile.email)}</p><div class="profile-rating" aria-label="${rating} out of 5 stars"><strong>${rating.toFixed(1)}</strong><span>★</span><small>${profile.review_count} review${profile.review_count === 1 ? "" : "s"}</small></div>`;
+    const reviews = profile.reviews || [];
+    $("#review-list").innerHTML = reviews.length ? reviews.map(review => `<article class="review-card"><strong>From ${escapeHtml(review.reviewer || "Gator Board member")}</strong><div class="review-stars" aria-label="${review.rating} out of 5 stars">${"★".repeat(review.rating)}${"☆".repeat(5 - review.rating)}</div>${review.comment ? `<p>${escapeHtml(review.comment)}</p>` : "<p class=\"muted-review\">No comment provided.</p>"}</article>`).join("") : '<p class="empty-state">No reviews yet. Complete a task to leave the first one.</p>';
+  } catch (error) {
+    console.error("Profile error:", error);
+    $("#profile-summary").innerHTML = '<p class="form-error">Unable to load your profile.</p>';
+  }
+}
+
+function renderRatingReview() {
+  const taskId = new URLSearchParams(location.search).get("id");
+  if (!taskId) {
+    location.replace("index.html#home");
+    return;
+  }
+  const task = getAllTasks().find(item => item.id === taskId);
+  if (task) $("#review-task-subtitle").textContent = `How did "${task.title}" go?`;
+  let selectedRating = 0;
+  document.querySelectorAll("[data-rating]").forEach(button => button.addEventListener("click", () => {
+    selectedRating = Number(button.dataset.rating);
+    document.querySelectorAll("[data-rating]").forEach(star => {
+      const active = Number(star.dataset.rating) <= selectedRating;
+      star.classList.toggle("is-selected", active);
+      star.setAttribute("aria-checked", String(active && Number(star.dataset.rating) === selectedRating));
+    });
+    $("#rating-error").hidden = true;
+  }));
+  $("#submit-review").addEventListener("click", async () => {
+    if (!selectedRating) {
+      $("#rating-error").textContent = "Select a star rating before submitting.";
+      $("#rating-error").hidden = false;
+      return;
+    }
+    const submit = $("#submit-review");
+    submit.disabled = true;
+    try {
+      const response = await fetch("/api/reviews", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({taskId, rating: selectedRating, comment: $("#review-comment").value})
+      });
+      const result = await response.json();
+      if (response.status === 401) {
+        location.href = "login.html";
+        return;
+      }
+      if (!response.ok) throw new Error(result.error || "Unable to save review.");
+      location.href = "profile.html";
+    } catch (error) {
+      console.error("Review error:", error);
+      $("#rating-error").textContent = error.message;
+      $("#rating-error").hidden = false;
+      submit.disabled = false;
+    }
+  });
 }
 
 function readForm(form) {
@@ -247,15 +406,21 @@ function renderAdd() {
   $("#save-draft").addEventListener("click", () => { localStorage.setItem(DRAFT_KEY,JSON.stringify(readForm(form))); showToast("Draft saved on this device"); });
 }
 
-function renderReview() {
+async function renderReview() {
   let task;
   try { task = JSON.parse(localStorage.getItem(DRAFT_KEY)); } catch { task = null; }
   if (!task) { location.replace("add-task.html"); return; }
   $("#review-detail").innerHTML = detailMarkup(task,true);
   window.addEventListener("load",() => showTaskMap(task));
-  $("#publish-task").addEventListener("click", () => {
+  $("#publish-task").addEventListener("click", async () => {
     const tasks = getSavedTasks();
-    const publishedTask = {...task,id:`task-${Date.now()}`,createdByMe:true};
+    const response = await fetch("/api/me");
+    if (!response.ok) {
+      location.href = "login.html";
+      return;
+    }
+    const {user} = await response.json();
+    const publishedTask = {...task,id:`task-${Date.now()}`,createdByMe:true,submitterId:user.id,poster:user.username};
     tasks.unshift(publishedTask);
     localStorage.setItem(STORAGE_KEY,JSON.stringify(tasks));
     localStorage.removeItem(DRAFT_KEY);
@@ -280,6 +445,12 @@ if (page === "detail") renderDetail();
 if (page === "add") renderAdd();
 if (page === "review") renderReview();
 if (page === "posted") renderPosted();
+if (page === "profile") renderProfile();
+if (page === "rating-review") renderRatingReview();
+
+document.querySelectorAll("[data-close-review]").forEach(element => element.addEventListener("click", () => {
+  $("#review-modal").hidden = true;
+}));
 
 const mapRequests = [
   {kind:"tasks",title:"Pick up textbooks",full:"Pick up textbooks",category:"Errand",lat:29.6466,lng:-82.3479},

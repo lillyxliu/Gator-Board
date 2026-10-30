@@ -8,6 +8,13 @@ const authLimit = rateLimit({
     limit: 10
 });
 
+function requireUser(req, res, next) {
+    if (!req.session.userId) {
+        return res.status(401).json({error: "Not logged in."});
+    }
+    next();
+}
+
 router.post("/signup", authLimit, async (req, res) => {
     const {username, email, password} = req.body;
     if (
@@ -118,6 +125,79 @@ router.get("/me", async (req, res) => {
         res.json({user: result.rows[0]});
     } catch (error) {
         res.status(500).json({error: "Internal server error"});
+    }
+});
+
+router.get("/profile", requireUser, async (req, res) => {
+    try {
+        const result = await pool.query(
+            `SELECT
+                u.id,
+                u.username,
+                u.email,
+                COALESCE(ROUND(AVG(r.rating)::numeric, 1), 0) AS rating,
+                COUNT(r.id)::int AS review_count,
+                COALESCE(
+                    json_agg(
+                        json_build_object(
+                            'rating', r.rating,
+                            'comment', r.comment,
+                            'createdAt', r.created_at,
+                            'reviewer', reviewer.username
+                        ) ORDER BY r.created_at DESC
+                    ) FILTER (WHERE r.id IS NOT NULL),
+                    '[]'::json
+                ) AS reviews
+            FROM users u
+            LEFT JOIN reviews r ON r.reviewee_id = u.id
+            LEFT JOIN users reviewer ON reviewer.id = r.reviewer_id
+            WHERE u.id = $1
+            GROUP BY u.id`,
+            [req.session.userId]
+        );
+
+        if (!result.rows.length) {
+            return res.status(401).json({error: "Not logged in."});
+        }
+        res.json({profile: result.rows[0]});
+    } catch (error) {
+        console.error("Error loading profile:", error);
+        res.status(500).json({error: "Internal server error"});
+    }
+});
+
+router.post("/reviews", requireUser, async (req, res) => {
+    const {taskId, revieweeId, rating, comment} = req.body;
+    const normalizedComment = typeof comment === "string" ? comment.trim() : "";
+
+    if (
+        typeof taskId !== "string" ||
+        taskId.trim().length === 0 ||
+        taskId.length > 255 ||
+        !Number.isInteger(revieweeId) ||
+        revieweeId <= 0 ||
+        revieweeId === req.session.userId ||
+        !Number.isInteger(rating) ||
+        rating < 1 ||
+        rating > 5 ||
+        normalizedComment.length > 1000
+    ) {
+        return res.status(400).json({error: "Please provide a rating from 1 to 5 and a comment of 1000 characters or fewer."});
+    }
+
+    try {
+        const result = await pool.query(
+            `INSERT INTO reviews (reviewer_id, reviewee_id, task_id, rating, comment)
+             VALUES ($1, $2, $3, $4, NULLIF($5, ''))
+             ON CONFLICT (reviewer_id, reviewee_id, task_id)
+             DO UPDATE SET rating = EXCLUDED.rating, comment = EXCLUDED.comment, created_at = NOW()
+             RETURNING id, task_id AS "taskId", rating, comment, created_at AS "createdAt"`,
+            [req.session.userId, revieweeId, taskId.trim(), rating, normalizedComment]
+        );
+        res.status(201).json({review: result.rows[0]});
+    } catch (error) {
+        console.error("Error saving review:", error);
+        res.status(500).json({error: "Unable to save review."});
     }
 });
 
