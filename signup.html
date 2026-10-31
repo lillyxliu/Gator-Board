@@ -60,8 +60,25 @@
       font: inherit;
       transition: opacity 0.2s ease;
     }
+
+    .guest-button {
+      width: 100%;
+      min-height: 44px;
+      margin-top: 10px;
+      border: 2px solid var(--green);
+      border-radius: 8px;
+      background: transparent;
+      color: var(--green);
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .guest-button:disabled {
+      cursor: wait;
+      opacity: 0.6;
+    }
   </style>
-</head>
+<script src="demo-api.js"></script></head>
 
 <body>
   <main class = "flow-page">
@@ -92,6 +109,7 @@
       <p id = "confirm-password-error" class = "error-message" role = "alert" hidden></p>
 
       <button class = "flow-button" type = "submit">Sign Up</button>
+      <button class = "guest-button" type = "button" id = "guest-login">Continue as guest</button>
     </form>
   </main>
 
@@ -175,10 +193,30 @@
           return;
         }
 
-        window.location.href = "/#home";
+        window.location.href = "welcome.html";
       } catch {
         console.error("Signup error:", error);
         showError("email-error", "Unable to connect to server.");
+      }
+    });
+
+    // Guest accounts are throwaway: they are deleted when you log out.
+    const guestButton = document.querySelector("#guest-login");
+    guestButton.addEventListener("click", async () => {
+      showError("email-error", "");
+      guestButton.disabled = true;
+      try {
+        const response = await fetch("/api/guest", {method: "POST"});
+        const result = await response.json();
+        if (!response.ok) {
+          showError("email-error", result.error);
+          guestButton.disabled = false;
+          return;
+        }
+        window.location.href = "welcome.html";
+      } catch {
+        showError("email-error", "Unable to connect to server.");
+        guestButton.disabled = false;
       }
     });
   </script>

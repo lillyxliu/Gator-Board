@@ -3,15 +3,53 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#ffffff" />
-    <title>Onboarding | Gator Board</title>
+    <meta name="theme-color" content="#f8f3e7" />
+    <title>Set up GatorBoard | Gator Board</title>
     <link rel="stylesheet" href="styles.css" />
     <script src="onboarding.js" defer></script>
-  </head>
-  <body>
-    <main class="flow-page">
-      <p class="onboarding-step" aria-live="polite"></p>
-      <a class="flow-button" id="onboarding-next" href="#step-2">Next</a>
+  <script src="demo-api.js"></script></head>
+  <body data-page="onboarding">
+    <main class="onboard-page">
+      <div class="onboard-top">
+        <button type="button" class="onboard-back" id="onboard-back" aria-label="Back" hidden>‹</button>
+        <div class="onboard-dots" aria-hidden="true"><span class="is-active"></span><span></span><span></span></div>
+        <a class="onboard-cancel" id="onboard-cancel" href="profile.html" hidden>Cancel</a>
+      </div>
+
+      <section class="onboard-step" data-step="1">
+        <h1>What do you want to see?</h1>
+        <p>Pick the kinds of tasks you care about. You can change this later in your profile.</p>
+        <div class="onboard-grid" id="onboard-categories">
+          <label class="onboard-choice"><input type="checkbox" value="Errand" checked><span><b>Errand</b><small>Pick-ups and quick favors</small></span></label>
+          <label class="onboard-choice"><input type="checkbox" value="Food" checked><span><b>Food</b><small>Meals, coffee, snacks</small></span></label>
+          <label class="onboard-choice"><input type="checkbox" value="Study" checked><span><b>Study</b><small>Notes, packets, tutoring</small></span></label>
+          <label class="onboard-choice"><input type="checkbox" value="Delivery" checked><span><b>Delivery</b><small>Packages and drop-offs</small></span></label>
+          <label class="onboard-choice"><input type="checkbox" value="Other" checked><span><b>Other</b><small>Everything else</small></span></label>
+        </div>
+      </section>
+
+      <section class="onboard-step" data-step="2" hidden>
+        <h1>How should we order tasks?</h1>
+        <p>This is the order your home screen starts in.</p>
+        <div class="onboard-list" id="onboard-sort">
+          <label class="onboard-choice"><input type="radio" name="sort" value="newest" checked><span><b>Newest first</b><small>The latest tasks at the top</small></span></label>
+          <label class="onboard-choice"><input type="radio" name="sort" value="nearest"><span><b>Nearest first</b><small>Uses your location</small></span></label>
+          <label class="onboard-choice"><input type="radio" name="sort" value="reward-high"><span><b>Highest reward</b><small>Biggest rewards at the top</small></span></label>
+          <label class="onboard-choice"><input type="radio" name="sort" value="duration"><span><b>Quickest</b><small>Shortest estimated time first</small></span></label>
+        </div>
+      </section>
+
+      <section class="onboard-step" data-step="3" hidden>
+        <h1>What should the map show?</h1>
+        <p>Choose which pins you see first on the map.</p>
+        <div class="onboard-list" id="onboard-map">
+          <label class="onboard-choice"><input type="radio" name="mapView" value="tasks" checked><span><b>Tasks</b><small>Things people need done</small></span></label>
+          <label class="onboard-choice"><input type="radio" name="mapView" value="rewards"><span><b>Rewards</b><small>What people are offering</small></span></label>
+        </div>
+      </section>
+
+      <p class="onboard-error" id="onboard-error" role="alert" hidden></p>
+      <button type="button" class="primary-button onboard-next" id="onboard-next">Next</button>
     </main>
   </body>
 </html>

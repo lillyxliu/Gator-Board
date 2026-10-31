@@ -8,16 +8,16 @@
     <title>Home | Gator Board</title>
     <link rel="stylesheet" href="styles.css" />
     <script src="app.js" defer></script>
-  </head>
+  <script src="demo-api.js"></script></head>
   <body data-page="home">
-    <main class="flow-page" id="welcome-screen">
+    <main class="flow-page" id="welcome-screen" hidden>
       <h1>Gator Board</h1>
       <p>UF students helping UF students.</p>
       <a class="flow-button" href="login.html">Open GatorBoard App</a>
       <a class="text-link" href="#home">Continue to demo</a>
     </main>
     <main class="app-shell home-page" id="home-app" hidden>
-      <header class="home-header"><h1>GatorBoard</h1></header>
+      <header class="home-header"><h1>GatorBoard</h1><button class="icon-button notification" type="button" aria-label="Notifications"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span></span></button></header>
       <label class="search-box"><span aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="8"/><path d="m16 16 6 6"/></svg></span><input id="task-search" type="search" placeholder="Search tasks, e.g. groceries, notes…" autocomplete="off" /></label>
       <section class="category-strip" aria-label="Task categories">
         <button class="category-button is-selected" type="button" data-category="All"><span><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="3" y="15" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/></svg></span>All</button>
@@ -28,7 +28,7 @@
       </section>
       <section class="task-section">
         <div class="section-heading"><h2>Nearby Tasks</h2><button type="button" id="my-tasks">My Tasks ›</button></div>
-        <label class="sort-control" for="task-sort">Sort by <select id="task-sort"><option value="newest">Newest first</option><option value="reward-high">Reward: High to Low</option><option value="reward-low">Reward: Low to High</option><option value="nearest">Nearest first</option><option value="duration">Shortest duration first</option></select></label>
+        <label class="sort-control" for="task-sort"><span>Sort by</span><select id="task-sort"><option value="newest">Newest first</option><option value="reward-high">Reward: High to Low</option><option value="reward-low">Reward: Low to High</option><option value="nearest">Nearest first</option><option value="duration">Shortest duration first</option></select></label>
         <p class="sort-status" id="sort-status" role="status"></p>
         <div class="task-list" id="task-list" aria-live="polite"></div>
         <p class="empty-state" id="empty-state" hidden>No tasks match your search.</p>
