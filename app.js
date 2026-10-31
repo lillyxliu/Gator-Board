@@ -63,7 +63,29 @@ function showToast(message) {
 
 function imageMarkup(task, className = "task-image") {
   if (task.image) return `<img class="${className}" src="${escapeHtml(task.image)}" alt="">`;
-  return `<span class="${className}" aria-hidden="true">${escapeHtml(task.icon || "◇")}</span>`;
+  return `<span class="${className}" aria-hidden="true">${taskIcon(task)}</span>`;
+}
+
+function taskDuration(task) {
+  const minutes = Number(task.durationMinutes);
+  return Number.isFinite(minutes) && minutes > 0 ? minutes : Infinity;
+}
+
+function taskRewardAmount(task) {
+  const value = String(task.reward ?? task.summary ?? "").trim();
+  return /^\$?\d+(?:\.\d+)?$/.test(value) ? Number(value.replace("$", "")) : null;
+}
+
+function taskCreatedTime(task) {
+  const fromId = /^task-(\d+)$/.exec(task.id || "");
+  return Number(task.createdAt) || Date.parse(task.createdAt) || (fromId ? Number(fromId[1]) : 0);
+}
+
+function taskDistanceMiles(a, b) {
+  const radians = degrees => degrees * Math.PI / 180;
+  const latitude = radians(b.lat-a.lat), longitude = radians(b.lng-a.lng);
+  const h = Math.sin(latitude/2)**2 + Math.cos(radians(a.lat))*Math.cos(radians(b.lat))*Math.sin(longitude/2)**2;
+  return 3958.8 * 2 * Math.asin(Math.sqrt(Math.min(1,h)));
 }
 
 function renderHome() {
@@ -71,6 +93,19 @@ function renderHome() {
   const search = $("#task-search");
   let selectedCategory = "All";
   let mineOnly = false;
+  const sort = $("#task-sort");
+  const status = $("#sort-status");
+  let userLocation = null;
+  let places = [];
+  function distance(task) {
+    if (!userLocation) return Infinity;
+    let spot = Number.isFinite(task.lat) && Number.isFinite(task.lng) ? task : null;
+    if (!spot) {
+      const name = (task.location || "").replace(/\(.*?\)/g, "").trim().toLowerCase();
+      spot = places.find(place => place.n.toLowerCase() === name);
+    }
+    return spot ? taskDistanceMiles(userLocation, spot) : Infinity;
+  }
 
   function update() {
     const query = search.value.trim().toLowerCase();
@@ -79,9 +114,63 @@ function renderHome() {
       const textMatches = [task.title,task.summary,task.category,task.location,task.description].join(" ").toLowerCase().includes(query);
       return categoryMatches && textMatches && (!mineOnly || task.createdByMe);
     });
-    taskList.innerHTML = tasks.map(task => `<a class="task-card" href="task-detail.html?id=${encodeURIComponent(task.id)}">${imageMarkup(task)}<span class="task-card-content"><h3>${escapeHtml(task.title)}</h3><p class="task-meta"><strong>${escapeHtml(task.summary || task.reward || "$8")}</strong> · ${escapeHtml(task.category)}</p><p class="task-meta">⌖ &nbsp;${escapeHtml(task.location)}${task.distance ? ` (${escapeHtml(task.distance)})` : ""}</p><p class="task-meta">◷ &nbsp;${escapeHtml(task.cardTime || task.time)}</p></span></a>`).join("");
+    taskList.innerHTML = tasks.map(task => `<a class="task-card" href="task-detail.html?id=${encodeURIComponent(task.id)}">${imageMarkup(task)}<span class="task-card-content"><h3>${escapeHtml(task.title)}</h3><p class="task-meta"><strong>${escapeHtml(task.summary || task.reward || "$8")}</strong> · ${escapeHtml(task.category)}</p><p class="task-meta"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 12-9 12S3 17 3 10a9 9 0 1 1 18 0Z"/><circle cx="12" cy="10" r="3"/></svg> &nbsp;${escapeHtml(task.location)}${task.distance ? ` (${escapeHtml(task.distance)})` : ""}</p><p class="task-meta"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 3"/></svg> &nbsp;${escapeHtml(task.cardTime || task.time)}</p></span></a>`).join("");
+    const cards = [...taskList.children];
+    tasks.forEach((task,index) => {
+      if (Number.isFinite(taskDuration(task))) {
+        const duration = document.createElement("p");
+        duration.className = "task-meta";
+        duration.textContent = `Estimated duration: ${task.durationMinutes} min`;
+        cards[index].querySelector(".task-card-content").append(duration);
+      }
+    });
+    const ordered = tasks.map((task,index) => ({task,index,distance:distance(task)}));
+    ordered.sort((a,b) => {
+      if (sort.value === "nearest") return (a.distance === b.distance ? 0 : a.distance - b.distance) || a.index - b.index;
+      if (sort.value === "duration") {
+        const first = taskDuration(a.task), second = taskDuration(b.task);
+        return (first === second ? 0 : first-second) || a.index-b.index;
+      }
+      if (sort.value.startsWith("reward")) {
+        const first = taskRewardAmount(a.task), second = taskRewardAmount(b.task);
+        if (first === null || second === null) return first === second ? a.index-b.index : first === null ? 1 : -1;
+        return (sort.value === "reward-high" ? second-first : first-second) || a.index-b.index;
+      }
+      return taskCreatedTime(b.task)-taskCreatedTime(a.task) || a.index-b.index;
+    });
+    ordered.forEach(item => {
+      const card = cards[item.index];
+      if (sort.value === "nearest") {
+        const locationLine = card.querySelectorAll(".task-meta")[1];
+        const label = Number.isFinite(item.distance) ? `${item.distance.toFixed(1)} mi away` : "Distance unavailable";
+        const icon = locationLine.querySelector("svg");
+        locationLine.textContent = ` ${item.task.location} (${label})`;
+        if (icon) locationLine.prepend(icon);
+      }
+      taskList.append(card);
+    });
     $("#empty-state").hidden = tasks.length !== 0;
   }
+
+  sort.addEventListener("change", async () => {
+    status.textContent = "";
+    if (sort.value !== "nearest" || userLocation) { update(); return; }
+    if (!navigator.geolocation) { status.textContent = "Location is unavailable. Showing newest tasks."; sort.value="newest"; update(); return; }
+    sort.disabled = true;
+    status.textContent = "Finding your location…";
+    try {
+      const [position, data] = await Promise.all([
+        new Promise((resolve,reject) => navigator.geolocation.getCurrentPosition(resolve,reject,{timeout:10000,maximumAge:60000})),
+        loadPlaces()
+      ]);
+      userLocation = {lat:position.coords.latitude,lng:position.coords.longitude};
+      places = data;
+      status.textContent = "Sorted by straight-line distance. Tasks without a known location appear last.";
+    } catch {
+      sort.value = "newest";
+      status.textContent = "Could not access your location. Allow location access and try again. Showing newest tasks.";
+    } finally { sort.disabled=false; update(); }
+  });
 
   search.addEventListener("input", update);
   document.querySelectorAll(".category-button").forEach(button => button.addEventListener("click", () => {
@@ -98,7 +187,7 @@ function renderHome() {
 }
 
 function detailMarkup(task, review = false, ownerView = false) {
-  return `${imageMarkup(task,"hero-image")}<div class="detail-heading"><h2>${escapeHtml(task.title)}</h2><strong>${escapeHtml(task.reward || task.summary || "$8")}</strong></div><p class="detail-row"><span>⌖</span>${escapeHtml(task.location)}</p><p class="detail-row"><span>▣</span>${escapeHtml(task.time)}</p>${review ? "" : `<div class="poster-row"><span class="avatar">👤</span><span><p>Posted by ${escapeHtml(task.poster || "gator_user")}</p><small>${escapeHtml(task.posted || "Just now")}</small></span>${ownerView ? "" : `<button class="outline-button" type="button" data-action="message">Message</button>`}</div>`}<section class="detail-section"><h3>Description</h3><p>${escapeHtml(task.description)}</p></section><section class="detail-section"><h3>Location</h3><div class="detail-map" id="detail-map" role="region" aria-label="Map showing ${escapeHtml(task.location)}"></div></section>${review ? "" : ownerView ? `<a class="secondary-button return-home-button" href="index.html#home">Return Home</a>` : `<button class="primary-button offer-button" type="button" data-action="offer">Offer to Complete</button>`}`;
+  return `${imageMarkup(task,"hero-image")}<div class="detail-heading"><h2>${escapeHtml(task.title)}</h2><strong>${escapeHtml(task.reward || task.summary || "$8")}</strong></div><p class="detail-row"><span><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 12-9 12S3 17 3 10a9 9 0 1 1 18 0Z"/><circle cx="12" cy="10" r="3"/></svg></span>${escapeHtml(task.location)}</p><p class="detail-row"><span><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 2v6M17 2v6M3 11h18"/></svg></span>${escapeHtml(task.time)}</p>${Number.isFinite(taskDuration(task)) ? `<p class="detail-row">Estimated duration: ${escapeHtml(task.durationMinutes)} min</p>` : ""}${review ? "" : `<div class="poster-row"><span class="avatar">👤</span><span><p>Posted by ${escapeHtml(task.poster || "gator_user")}</p><small>${escapeHtml(task.posted || "Just now")}</small></span>${ownerView ? "" : `<button class="outline-button" type="button" data-action="message">Message</button>`}</div>`}<section class="detail-section"><h3>Description</h3><p>${escapeHtml(task.description)}</p></section><section class="detail-section"><h3>Location</h3><div class="detail-map" id="detail-map" role="region" aria-label="Map showing ${escapeHtml(task.location)}"></div></section>${review ? "" : `<button class="primary-button offer-button" type="button" data-action="complete">${ownerView ? "Complete Task & Review Runner" : "Complete Task & Review Submitter"}</button>`}`;
 }
 
 // Small real map for the review and detail pages; falls back to matching the location text against places.json for older tasks without coordinates.
@@ -125,17 +214,176 @@ function renderDetail() {
   const task = getAllTasks().find(item => item.id === id) || sampleTasks[0];
   $("#task-detail").innerHTML = detailMarkup(task,false,ownerView);
   window.addEventListener("load",() => showTaskMap(task));
-  document.querySelectorAll("[data-action]").forEach(button => button.addEventListener("click", () => openChatForTask(task,button.dataset.action === "offer")));
+  document.querySelectorAll("[data-action]").forEach(button => button.addEventListener("click", () => {
+    if (button.dataset.action === "complete") {
+      openReviewModal(task, ownerView);
+      return;
+    }
+    openChatForTask(task,button.dataset.action === "offer");
+  }));
+}
+
+async function openReviewModal(task, ownerView) {
+  let revieweeId = ownerView ? task.runnerId : task.submitterId;
+  if (!ownerView && !Number.isInteger(task.runnerId)) {
+    const meResponse = await fetch("/api/me");
+    if (meResponse.status === 401) {
+      location.href = "login.html";
+      return;
+    }
+    if (!meResponse.ok) {
+      showToast("Unable to identify the errand runner.");
+      return;
+    }
+    const {user} = await meResponse.json();
+    task.runnerId = user.id;
+    const savedTasks = getSavedTasks();
+    const savedTask = savedTasks.find(item => item.id === task.id);
+    if (savedTask) {
+      savedTask.runnerId = user.id;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(savedTasks));
+    }
+  }
+  const modal = $("#review-modal");
+  let selectedRating = 0;
+  $("#modal-review-subtitle").textContent = ownerView ? "Rate the errand runner who completed this task." : "Rate the task submitter who posted this task.";
+  $("#modal-review-comment").value = "";
+  $("#modal-rating-error").hidden = true;
+  document.querySelectorAll("[data-modal-rating]").forEach(button => {
+    button.classList.remove("is-selected");
+    button.onclick = () => {
+      selectedRating = Number(button.dataset.modalRating);
+      document.querySelectorAll("[data-modal-rating]").forEach(star => star.classList.toggle("is-selected", Number(star.dataset.modalRating) <= selectedRating));
+      $("#modal-rating-error").hidden = true;
+    };
+  });
+  modal.hidden = false;
+  $("#modal-submit-review").onclick = async () => {
+    if (!selectedRating) {
+      $("#modal-rating-error").textContent = "Select a star rating before submitting.";
+      $("#modal-rating-error").hidden = false;
+      return;
+    }
+    if (!Number.isInteger(revieweeId)) {
+      $("#modal-rating-error").textContent = "This task is not assigned to a submitter or errand runner yet.";
+      $("#modal-rating-error").hidden = false;
+      return;
+    }
+    const submit = $("#modal-submit-review");
+    submit.disabled = true;
+    try {
+      const response = await fetch("/api/reviews", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({taskId: task.id, revieweeId, rating: selectedRating, comment: $("#modal-review-comment").value})
+      });
+      const result = await response.json();
+      if (response.status === 401) {
+        location.href = "login.html";
+        return;
+      }
+      if (!response.ok) throw new Error(result.error || "Unable to save review.");
+      modal.hidden = true;
+      showToast("Review submitted.");
+    } catch (error) {
+      console.error("Review error:", error);
+      $("#modal-rating-error").textContent = error.message;
+      $("#modal-rating-error").hidden = false;
+    } finally {
+      submit.disabled = false;
+    }
+  };
+}
+
+async function renderProfile() {
+  const logoutButton = $("#logout-button");
+  logoutButton.addEventListener("click", async () => {
+    logoutButton.disabled = true;
+    try {
+      const response = await fetch("/api/logout", {method: "POST"});
+      if (!response.ok) throw new Error("Logout failed.");
+      location.href = "login.html";
+    } catch (error) {
+      console.error("Logout error:", error);
+      showToast("Unable to log out. Please try again.");
+      logoutButton.disabled = false;
+    }
+  });
+
+  try {
+    const response = await fetch("/api/profile");
+    if (response.status === 401) {
+      location.href = "login.html";
+      return;
+    }
+    if (!response.ok) throw new Error("Profile request failed");
+    const {profile} = await response.json();
+    const rating = Number(profile.rating);
+    $("#profile-summary").innerHTML = `<div class="profile-avatar">♙</div><h2>${escapeHtml(profile.username)}</h2><p>${escapeHtml(profile.email)}</p><div class="profile-rating" aria-label="${rating} out of 5 stars"><strong>${rating.toFixed(1)}</strong><span>★</span><small>${profile.review_count} review${profile.review_count === 1 ? "" : "s"}</small></div>`;
+    const reviews = profile.reviews || [];
+    $("#review-list").innerHTML = reviews.length ? reviews.map(review => `<article class="review-card"><strong>From ${escapeHtml(review.reviewer || "Gator Board member")}</strong><div class="review-stars" aria-label="${review.rating} out of 5 stars">${"★".repeat(review.rating)}${"☆".repeat(5 - review.rating)}</div>${review.comment ? `<p>${escapeHtml(review.comment)}</p>` : "<p class=\"muted-review\">No comment provided.</p>"}</article>`).join("") : '<p class="empty-state">No reviews yet. Complete a task to leave the first one.</p>';
+  } catch (error) {
+    console.error("Profile error:", error);
+    $("#profile-summary").innerHTML = '<p class="form-error">Unable to load your profile.</p>';
+  }
+}
+
+function renderRatingReview() {
+  const taskId = new URLSearchParams(location.search).get("id");
+  if (!taskId) {
+    location.replace("index.html#home");
+    return;
+  }
+  const task = getAllTasks().find(item => item.id === taskId);
+  if (task) $("#review-task-subtitle").textContent = `How did "${task.title}" go?`;
+  let selectedRating = 0;
+  document.querySelectorAll("[data-rating]").forEach(button => button.addEventListener("click", () => {
+    selectedRating = Number(button.dataset.rating);
+    document.querySelectorAll("[data-rating]").forEach(star => {
+      const active = Number(star.dataset.rating) <= selectedRating;
+      star.classList.toggle("is-selected", active);
+      star.setAttribute("aria-checked", String(active && Number(star.dataset.rating) === selectedRating));
+    });
+    $("#rating-error").hidden = true;
+  }));
+  $("#submit-review").addEventListener("click", async () => {
+    if (!selectedRating) {
+      $("#rating-error").textContent = "Select a star rating before submitting.";
+      $("#rating-error").hidden = false;
+      return;
+    }
+    const submit = $("#submit-review");
+    submit.disabled = true;
+    try {
+      const response = await fetch("/api/reviews", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({taskId, rating: selectedRating, comment: $("#review-comment").value})
+      });
+      const result = await response.json();
+      if (response.status === 401) {
+        location.href = "login.html";
+        return;
+      }
+      if (!response.ok) throw new Error(result.error || "Unable to save review.");
+      location.href = "profile.html";
+    } catch (error) {
+      console.error("Review error:", error);
+      $("#rating-error").textContent = error.message;
+      $("#rating-error").hidden = false;
+      submit.disabled = false;
+    }
+  });
 }
 
 function readForm(form) {
   const data = new FormData(form);
-  return {id:`task-${Date.now()}`,title:data.get("title").trim(),summary:`$${data.get("reward")}`,reward:`$${data.get("reward")}`,category:data.get("category"),description:data.get("description").trim(),location:data.get("location").trim(),...(data.get("lat") && data.get("lng") ? {lat:Number(data.get("lat")),lng:Number(data.get("lng"))} : {}),time:data.get("time").trim(),cardTime:data.get("time").trim(),poster:"you",posted:"Just now",createdByMe:true,icon:data.get("category") === "Study" ? "▭" : "◇"};
+  return {durationMinutes: data.get("durationMinutes") ? Number(data.get("durationMinutes")) : null,id:`task-${Date.now()}`,title:data.get("title").trim(),summary:`$${data.get("reward")}`,reward:`$${data.get("reward")}`,category:data.get("category"),description:data.get("description").trim(),location:data.get("location").trim(),...(data.get("lat") && data.get("lng") ? {lat:Number(data.get("lat")),lng:Number(data.get("lng"))} : {}),time:data.get("time").trim(),cardTime:data.get("time").trim(),poster:"you",posted:"Just now",createdByMe:true,icon:data.get("category") === "Study" ? "▭" : "◇"};
 }
 
 function fillForm(form, draft) {
   if (!draft) return;
-  ["title","description","location","time","reward","lat","lng"].forEach(name => { if (form.elements[name] && draft[name] != null) form.elements[name].value = name === "reward" ? String(draft.reward).replace("$","") : draft[name]; });
+  ["title","description","location","time","reward","lat","lng","durationMinutes"].forEach(name => { if (form.elements[name] && draft[name] != null) form.elements[name].value = name === "reward" ? String(draft.reward).replace("$","") : draft[name]; });
   const category = form.querySelector(`[name="category"][value="${CSS.escape(draft.category || "Errand")}"]`);
   if (category) category.checked = true;
 }
@@ -248,15 +496,21 @@ function renderAdd() {
   $("#save-draft").addEventListener("click", () => { localStorage.setItem(DRAFT_KEY,JSON.stringify(readForm(form))); showToast("Draft saved on this device"); });
 }
 
-function renderReview() {
+async function renderReview() {
   let task;
   try { task = JSON.parse(localStorage.getItem(DRAFT_KEY)); } catch { task = null; }
   if (!task) { location.replace("add-task.html"); return; }
   $("#review-detail").innerHTML = detailMarkup(task,true);
   window.addEventListener("load",() => showTaskMap(task));
-  $("#publish-task").addEventListener("click", () => {
+  $("#publish-task").addEventListener("click", async () => {
     const tasks = getSavedTasks();
-    const publishedTask = {...task,id:`task-${Date.now()}`,createdByMe:true};
+    const response = await fetch("/api/me");
+    if (!response.ok) {
+      location.href = "login.html";
+      return;
+    }
+    const {user} = await response.json();
+    const publishedTask = {...task,id:`task-${Date.now()}`,createdByMe:true,submitterId:user.id,poster:user.username};
     tasks.unshift(publishedTask);
     localStorage.setItem(STORAGE_KEY,JSON.stringify(tasks));
     localStorage.removeItem(DRAFT_KEY);
@@ -281,6 +535,12 @@ if (page === "detail") renderDetail();
 if (page === "add") renderAdd();
 if (page === "review") renderReview();
 if (page === "posted") renderPosted();
+if (page === "profile") renderProfile();
+if (page === "rating-review") renderRatingReview();
+
+document.querySelectorAll("[data-close-review]").forEach(element => element.addEventListener("click", () => {
+  $("#review-modal").hidden = true;
+}));
 
 const mapRequests = [
   {kind:"tasks",title:"Pick up textbooks",full:"Pick up textbooks",category:"Errand",lat:29.6466,lng:-82.3479},
@@ -739,3 +999,8 @@ function setupNotifications() {
 }
 syncNotifications();
 setupNotifications();
+
+function taskIcon(task) {
+ const icons = {"Study":"<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 5C8 2 4 3 2 4v16c3-2 7-2 10 0 3-2 7-2 10 0V4c-3-2-7-2-10 1Zm0 0v15\"/></svg>","Delivery":"<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m12 2 10 5-10 6L2 7l10-5Zm-10 5v10l10 5 10-5V7M12 13v9M7 4.5l10 5v6\"/></svg>","Errand":"<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 7h14l1 14H4L5 7Z\"/><path d=\"M8 9V6a4 4 0 0 1 8 0v3\"/></svg>","Food":"<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M4 3v7a3 3 0 0 0 6 0V3M7 3v18M20 3c-5 1-5 11 0 11V3Zm0 11v7\"/></svg>"};
+ return icons[task.category] || icons.Delivery;
+}
