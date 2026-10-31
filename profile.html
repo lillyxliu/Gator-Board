@@ -7,24 +7,136 @@
     <title>Profile | Gator Board</title>
     <link rel="stylesheet" href="styles.css" />
     <script src="app.js" defer></script>
-  </head>
+  <script src="demo-api.js"></script></head>
   <body data-page="profile">
     <main class="app-shell profile-page">
-      <header class="page-header">
-        <a href="index.html#home" aria-label="Back to home">‹</a>
-        <h1>Profile</h1>
-        <span></span>
-      </header>
-      <section class="profile-summary" id="profile-summary" aria-live="polite">
-        <div class="profile-avatar"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="7" r="5"/><path d="M2 23a10 10 0 0 1 20 0"/></svg></div>
-        <h2>Loading profile…</h2>
+      <header class="home-header"><h1>GatorBoard</h1></header>
+      <section class="profile-hero" aria-live="polite">
+        <div class="profile-photo" id="profile-photo" aria-hidden="true"></div>
+        <h2 id="profile-name">Loading profile…</h2>
+        <p class="profile-demo-note">This is not a real account, just a demonstration of features</p>
       </section>
-      <section class="profile-reviews" aria-labelledby="reviews-heading">
-        <h2 id="reviews-heading">Reviews</h2>
-        <div id="review-list" class="review-list"></div>
-      </section>
-      <button class="secondary-button profile-logout" id="logout-button" type="button">Log Out</button>
+      <nav class="profile-menu" aria-label="Profile options">
+        <button type="button" class="profile-item" data-open="settings-modal" aria-haspopup="dialog">Settings</button>
+        <button type="button" class="profile-item" data-open="reviews-sheet" aria-haspopup="dialog">Reviews</button>
+        <button type="button" class="profile-item" data-open="contact-sheet" aria-haspopup="dialog">Contact Us</button>
+        <button type="button" class="profile-item" data-open="report-sheet" aria-haspopup="dialog">Report Fraud</button>
+        <button type="button" class="profile-item" data-open="requests-sheet" aria-haspopup="dialog">View Drafts &amp; All Requests</button>
+      </nav>
     </main>
+
+    <div class="profile-modal" id="settings-modal" role="dialog" aria-modal="true" aria-label="Settings" hidden>
+      <div class="profile-modal-card">
+        <a class="modal-item" href="onboarding.html?edit=1">Edit what I see</a>
+        <button type="button" class="modal-item" id="change-photo">Change Profile Picture</button>
+        <button type="button" class="modal-item" data-open="notify-sheet" aria-haspopup="dialog">Notifications</button>
+        <button type="button" class="modal-item" data-soon="Change Area">Change Area</button>
+        <button type="button" class="modal-item" id="remove-data">Remove all Data</button>
+        <button type="button" class="modal-item" id="delete-account">Delete Account &amp; Data</button>
+        <button type="button" class="modal-item" data-open="privacy-sheet" aria-haspopup="dialog">Privacy Policy</button>
+        <button type="button" class="modal-item" data-open="terms-sheet" aria-haspopup="dialog">Terms of Service</button>
+        <button type="button" class="modal-item is-primary" id="logout-button">Log Out</button>
+        <button type="button" class="modal-close" data-close>Close</button>
+        <input type="file" id="avatar-input" accept="image/*" hidden>
+      </div>
+    </div>
+
+    <div class="sheet" id="reviews-sheet" role="dialog" aria-label="Reviews" hidden>
+      <div class="sheet-card">
+        <button type="button" class="sheet-close" data-close aria-label="Close">✕</button>
+        <h2>Reviews</h2>
+        <section class="profile-summary" id="profile-summary"></section>
+        <div id="review-list" class="review-list"></div>
+      </div>
+    </div>
+
+    <div class="sheet" id="requests-sheet" role="dialog" aria-label="Drafts and requests" hidden>
+      <div class="sheet-card">
+        <button type="button" class="sheet-close" data-close aria-label="Close">✕</button>
+        <h2>Drafts &amp; Requests</h2>
+        <div id="request-list"></div>
+      </div>
+    </div>
+
+    <div class="sheet" id="notify-sheet" role="dialog" aria-label="Notification settings" hidden>
+      <div class="sheet-card">
+        <button type="button" class="sheet-close" data-close aria-label="Close">✕</button>
+        <h2>Notifications</h2>
+        <p class="sheet-hint">New-task alerts follow the categories you picked in “Edit what I see”.</p>
+        <form class="sheet-form" id="notify-form">
+          <label class="map-switch"><span>New tasks that match my interests</span><input type="checkbox" name="newTasks" checked><span class="map-switch-track" aria-hidden="true"></span></label>
+          <label class="map-switch"><span>New chat messages</span><input type="checkbox" name="chatMessages" checked><span class="map-switch-track" aria-hidden="true"></span></label>
+          <button type="submit" class="primary-button sheet-submit">Save</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="sheet" id="contact-sheet" role="dialog" aria-label="Contact us" hidden>
+      <div class="sheet-card">
+        <button type="button" class="sheet-close" data-close aria-label="Close">✕</button>
+        <h2>Contact Us</h2>
+        <form class="sheet-form" id="contact-form">
+          <label>Topic
+            <select name="topic" required>
+              <option value="" selected disabled>Choose a topic</option>
+              <option>Account</option>
+              <option>A task or chat</option>
+              <option>Bug report</option>
+              <option>Feedback</option>
+              <option>Other</option>
+            </select>
+          </label>
+          <label>Reply email<input name="email" type="email" required autocomplete="email"></label>
+          <label>Message<textarea name="message" required minlength="5" maxlength="3000" rows="5" placeholder="How can we help?"></textarea></label>
+          <p class="form-error" id="contact-error" hidden></p>
+          <button type="submit" class="primary-button sheet-submit">Send</button>
+        </form>
+        <div class="sheet-done" id="contact-done" hidden></div>
+      </div>
+    </div>
+
+    <div class="sheet" id="report-sheet" role="dialog" aria-label="Report fraud" hidden>
+      <div class="sheet-card">
+        <button type="button" class="sheet-close" data-close aria-label="Close">✕</button>
+        <h2>Report Fraud</h2>
+        <form class="sheet-form" id="report-form">
+          <label>Who are you reporting?<input id="report-search" type="search" autocomplete="off" placeholder="Search by username"></label>
+          <div class="user-results" id="report-results" role="listbox" aria-label="Matching users"></div>
+          <p class="report-selected" id="report-selected" hidden></p>
+          <label>Reason
+            <select name="reason" required>
+              <option value="" selected disabled>Choose a reason</option>
+              <option>Scam or fake task</option>
+              <option>Didn't pay or deliver</option>
+              <option>Fake account</option>
+              <option>Harassment</option>
+              <option>Other</option>
+            </select>
+          </label>
+          <label>What happened? (optional)<textarea name="details" maxlength="3000" rows="4"></textarea></label>
+          <p class="form-error" id="report-error" hidden></p>
+          <button type="submit" class="primary-button sheet-submit">Submit report</button>
+        </form>
+        <div class="sheet-done" id="report-done" hidden></div>
+      </div>
+    </div>
+
+    <div class="sheet" id="privacy-sheet" role="dialog" aria-label="Privacy Policy" hidden>
+      <div class="sheet-card">
+        <button type="button" class="sheet-close" data-close aria-label="Close">✕</button>
+        <h2>Privacy Policy</h2>
+        <p class="legal-egg">Hi :)</p>
+      </div>
+    </div>
+
+    <div class="sheet" id="terms-sheet" role="dialog" aria-label="Terms of Service" hidden>
+      <div class="sheet-card">
+        <button type="button" class="sheet-close" data-close aria-label="Close">✕</button>
+        <h2>Terms of Service</h2>
+        <p class="legal-egg">Hi :)</p>
+      </div>
+    </div>
+
     <nav class="bottom-nav" aria-label="Main navigation">
       <a class="nav-item" href="index.html#home"><span class="nav-icon"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 10 9-8 9 8v12h-6v-8H9v8H3V10Z"/></svg></span><span>Home</span></a>
       <a class="nav-item" href="map.html"><span class="nav-icon"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 12-9 12S3 17 3 10a9 9 0 1 1 18 0Z"/><circle cx="12" cy="10" r="3"/></svg></span><span>Map</span></a>

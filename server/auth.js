@@ -1,5 +1,6 @@
 const express = require("express");
 const argon2 = require("argon2");
+const crypto = require("crypto");
 const rateLimit = require("express-rate-limit");
 const pool = require("./db");
 const router = express.Router();
@@ -107,6 +108,37 @@ router.post("/login", authLimit, async (req, res) => {
     }
 });
 
+// "Continue as guest": a throwaway account with a random password nobody knows, so only this session can use it.
+router.post("/guest", authLimit, async (req, res) => {
+    try {
+        const username = `guest_${crypto.randomBytes(3).toString("hex")}`;
+        const hash = await argon2.hash(crypto.randomBytes(32).toString("hex"));
+        const result = await pool.query(
+            "INSERT INTO users (username, email, password_hash, is_guest) VALUES ($1, $2, $3, TRUE) RETURNING id, username, email",
+            [username, `${username}@guest.local`, hash]
+        );
+        const user = result.rows[0];
+        req.session.regenerate((error) => {
+            if (error) {
+                return res.status(500).json({error: "Session creation failed."});
+            }
+            req.session.userId = user.id;
+            req.session.save((error) => {
+                if (error) {
+                    return res.status(500).json({error: "Session save failed."});
+                }
+                res.status(201).json({user});
+            });
+        });
+    } catch (error) {
+        if (error.code === "23505") {
+            return res.status(409).json({error: "Please try again."});
+        }
+        console.error("Error creating guest:", error);
+        res.status(500).json({error: "Internal server error"});
+    }
+});
+
 router.get("/me", async (req, res) => {
     if (!req.session.userId) {
         return res.status(401).json({error: "Not logged in."});
@@ -114,7 +146,7 @@ router.get("/me", async (req, res) => {
 
     try {
         const result = await pool.query(
-            "SELECT id, username, email FROM users WHERE id = $1",
+            "SELECT id, username, email, preferences, avatar FROM users WHERE id = $1",
             [req.session.userId]
         );
 
@@ -135,6 +167,7 @@ router.get("/profile", requireUser, async (req, res) => {
                 u.id,
                 u.username,
                 u.email,
+                u.avatar,
                 COALESCE(ROUND(AVG(r.rating)::numeric, 1), 0) AS rating,
                 COUNT(r.id)::int AS review_count,
                 COALESCE(
@@ -201,7 +234,15 @@ router.post("/reviews", requireUser, async (req, res) => {
     }
 });
 
-router.post("/logout", (req, res) => {
+router.post("/logout", async (req, res) => {
+    // Guest accounts end with their session; their tasks, chats and reviews go with them through ON DELETE CASCADE.
+    if (req.session.userId) {
+        try {
+            await pool.query("DELETE FROM users WHERE id = $1 AND is_guest", [req.session.userId]);
+        } catch (error) {
+            console.error("Error removing guest:", error);
+        }
+    }
     req.session.destroy((error) => {
         if (error) {
             return res.status(500).json({error: "Logout failed."});

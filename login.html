@@ -75,8 +75,26 @@
         .show-button.active {
           opacity: 0.4;
         }
+
+        .guest-button {
+          display: block;
+          min-height: 32px;
+          margin: 6px auto 0;
+          padding: 4px 12px;
+          border: 1px solid #9aa79c;
+          border-radius: 8px;
+          background: transparent;
+          color: #66736a;
+          font: 600 12px Inter, system-ui, sans-serif;
+          cursor: pointer;
+        }
+
+        .guest-button:disabled {
+          cursor: wait;
+          opacity: 0.6;
+        }
     </style>
-  </head>
+  <script src="demo-api.js"></script></head>
 
   <body>
     <main class="flow-page">
@@ -94,6 +112,7 @@
         <p id = "login-error" class = "error-message" role = "alert" hidden></p>
         <button class = "flow-button" type = "submit">Log In</button>
         <p class = "signup-link">Don't have an account? <a href = "signup.html">Sign Up</a></p>
+        <button class = "guest-button" type = "button" id = "guest-login">Continue as guest (Dev Showcase Only)</button>
       </form>
     </main>
 
@@ -138,10 +157,32 @@
             return;
           }
 
-          window.location.href = "index.html#home";
+          window.location.href = "welcome.html";
         } catch {
           loginError.textContent = "Unable to connect to server.";
           loginError.hidden = false;
+        }
+      });
+
+      // Guest accounts are throwaway: they are deleted when you log out.
+      const guestButton = document.querySelector("#guest-login");
+      guestButton.addEventListener("click", async () => {
+        loginError.hidden = true;
+        guestButton.disabled = true;
+        try {
+          const response = await fetch("/api/guest", {method: "POST"});
+          const result = await response.json();
+          if (!response.ok) {
+            loginError.textContent = result.error;
+            loginError.hidden = false;
+            guestButton.disabled = false;
+            return;
+          }
+          window.location.href = "welcome.html";
+        } catch {
+          loginError.textContent = "Unable to connect to server.";
+          loginError.hidden = false;
+          guestButton.disabled = false;
         }
       });
     </script>

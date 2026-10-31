@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f8f3e7" />
+    <title>Welcome | Gator Board</title>
+    <link rel="stylesheet" href="styles.css" />
+  <script src="demo-api.js"></script></head>
+  <body data-page="welcome">
+    <main class="welcome-page" id="welcome" aria-live="polite">
+      <!--
+        LOGO ANIMATION SLOT
+        Plays when the app is opened (once per browser session) and after every sign-in or sign-up.
+        It plays assets/logo.mp4 and moves on when the video ends. Swap the <video> for another animation
+        if needed. If the video cannot play, the GatorBoard wordmark below is shown instead.
+      -->
+      <div class="welcome-logo" id="welcome-logo">
+        <video class="welcome-video" id="welcome-video" src="assets/logo.mp4" autoplay muted playsinline preload="auto" aria-label="GatorBoard logo animation"></video>
+        <span class="welcome-wordmark" id="welcome-fallback" hidden>GatorBoard</span>
+      </div>
+      <p class="welcome-tagline">UF students helping UF students.</p>
+      <button type="button" class="welcome-skip" id="welcome-skip">Tap to continue</button>
+    </main>
+    <script>
+      // The logo video decides how long this screen stays up; WELCOME_MS is the longest it will wait.
+      const WELCOME_MS = 6000;
+      try { sessionStorage.setItem("gbWelcomed", "1"); } catch {}
+
+      // Where to go next: onboarding on a first sign-in, otherwise Home. Works out in the background.
+      const destination = fetch("/api/me").then(async response => {
+        if (response.status === 401) return "login.html";
+        const {user} = await response.json();
+        return user.preferences ? "index.html#home" : "onboarding.html";
+      }).catch(() => "index.html#home");
+
+      let moved = false;
+      const go = async () => {
+        if (moved) return;
+        moved = true;
+        location.replace(await destination);
+      };
+      // Tapping anywhere on the screen skips the animation.
+      document.getElementById("welcome").addEventListener("click", go);
+
+      const video = document.getElementById("welcome-video");
+      const showFallback = () => { video.hidden = true; document.getElementById("welcome-fallback").hidden = false; setTimeout(go, 1800); };
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        video.pause();
+        setTimeout(go, 900);
+      } else {
+        video.addEventListener("ended", () => setTimeout(go, 300));
+        video.addEventListener("error", showFallback);
+        video.play().catch(showFallback);
+        setTimeout(go, WELCOME_MS);
+      }
+    </script>
+  </body>
+</html>

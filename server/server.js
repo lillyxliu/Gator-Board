@@ -5,7 +5,9 @@ const express = require("express");
 const session = require("express-session");
 const PgSession = require("connect-pg-simple")(session);
 const path = require("path");
+const fs = require("fs");
 const pool = require("./db");
+const {seedDemoData} = require("./seed");
 const app = express();
 const production = process.env.NODE_ENV === "production";
 
@@ -13,7 +15,7 @@ if (production) {
     app.set("trust proxy", 1);
 }
 
-app.use(express.json());
+app.use(express.json({limit: "2mb"}));
 app.use(session({
     store: new PgSession({
         pool,
@@ -32,9 +34,12 @@ app.use(session({
 }));
 
 app.use("/api", require("./auth"));
+app.use("/api", require("./chat"));
 app.use(express.static(path.join(__dirname, "..")));
 async function start() {
     try {
+        // init.sql is idempotent, so run it on every start to add new tables to existing databases.
+        await pool.query(fs.readFileSync(path.join(__dirname, "..", "db", "init.sql"), "utf8"));
         await pool.query(`
             ALTER TABLE reviews ADD COLUMN IF NOT EXISTS reviewee_id BIGINT REFERENCES users(id) ON DELETE CASCADE;
             ALTER TABLE reviews DROP CONSTRAINT IF EXISTS reviews_reviewer_id_task_id_key;
@@ -43,6 +48,9 @@ async function start() {
             CREATE INDEX IF NOT EXISTS reviews_reviewee_created_at
                 ON reviews (reviewee_id, created_at DESC);
         `);
+        await seedDemoData();
+        // Guests who never logged out are cleaned up after a day.
+        await pool.query("DELETE FROM users WHERE is_guest AND created_at < NOW() - INTERVAL '1 day'");
         app.listen(process.env.PORT || 3000, () => {
             console.log(`Server is running on port ${process.env.PORT || 3000}`);
         });

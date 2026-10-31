@@ -39,7 +39,15 @@ const sampleTasks = [
 ];
 
 const page = document.body.dataset.page;
+// Opening the app plays the logo animation (welcome.html) once per browser session.
+if (page === "home") {
+  let welcomed = false;
+  try { welcomed = sessionStorage.getItem("gbWelcomed") === "1"; } catch {}
+  if (!welcomed) location.replace("welcome.html");
+}
 const $ = (selector, scope = document) => scope.querySelector(selector);
+// Run now if the page has already finished loading (pages render after tasks arrive), otherwise on load.
+const whenLoaded = fn => document.readyState === "complete" ? fn() : window.addEventListener("load",fn);
 const ic = name => `<i class="i i-${name}" aria-hidden="true"></i>`;
 
 function escapeHtml(value = "") {
@@ -51,7 +59,31 @@ function getSavedTasks() {
   catch { return []; }
 }
 
-function getAllTasks() { return [...getSavedTasks(), ...sampleTasks]; }
+function getAllTasks() {
+  const saved = getSavedTasks();
+  return [...saved, ...sampleTasks.filter(sample => !saved.some(task => task.id === sample.id))];
+}
+
+// Published tasks live on the server so every account sees them; the browser keeps a copy for quick reads.
+const PREFS_KEY = "gatorBoardPrefs";
+let currentUser = null;
+function getPrefs() {
+  try { return JSON.parse(localStorage.getItem(PREFS_KEY)); } catch { return null; }
+}
+async function refreshTasks() {
+  try {
+    const [meResponse, tasksResponse] = await Promise.all([fetch("/api/me"), fetch("/api/tasks")]);
+    if (meResponse.ok) {
+      currentUser = (await meResponse.json()).user;
+      localStorage.setItem(PREFS_KEY,JSON.stringify(currentUser.preferences || null));
+    }
+    if (tasksResponse.ok) {
+      const {tasks} = await tasksResponse.json();
+      localStorage.setItem(STORAGE_KEY,JSON.stringify(tasks.map(task => ({...task,createdByMe:Boolean(currentUser) && Number(task.submitterId) === Number(currentUser.id)}))));
+    }
+  } catch {}
+}
+const tasksReady = refreshTasks();
 
 function showToast(message) {
   const toast = $(".toast");
@@ -61,8 +93,16 @@ function showToast(message) {
   window.setTimeout(() => toast.classList.remove("is-visible"), 2200);
 }
 
+function avatarMarkup(src, name, className = "avatar") {
+  if (src) return `<img class="${className}" src="${escapeHtml(src)}" alt="">`;
+  const letters = String(name).split(/[\s_]+/).filter(Boolean).map(part => part[0]).join("").slice(0,2).toUpperCase() || "?";
+  return `<span class="${className} avatar-initials" aria-hidden="true">${escapeHtml(letters)}</span>`;
+}
+
 function imageMarkup(task, className = "task-image") {
   if (task.image) return `<img class="${className}" src="${escapeHtml(task.image)}" alt="">`;
+  const cash = task.rewardType === "other" ? null : taskRewardAmount(task);
+  if (cash !== null) return `<span class="${className} task-cash" aria-hidden="true">$${cash}</span>`;
   return `<span class="${className}" aria-hidden="true">${taskIcon(task)}</span>`;
 }
 
@@ -107,10 +147,13 @@ function renderHome() {
     return spot ? taskDistanceMiles(userLocation, spot) : Infinity;
   }
 
+  const prefs = getPrefs();
+  const wanted = category => !prefs || prefs.categories.includes(category);
+  document.querySelectorAll(".category-button").forEach(button => { if (button.dataset.category !== "All") button.hidden = !wanted(button.dataset.category); });
   function update() {
     const query = search.value.trim().toLowerCase();
     const tasks = getAllTasks().filter(task => {
-      const categoryMatches = selectedCategory === "All" || task.category === selectedCategory;
+      const categoryMatches = selectedCategory === "All" ? (mineOnly || wanted(task.category)) : task.category === selectedCategory;
       const textMatches = [task.title,task.summary,task.category,task.location,task.description].join(" ").toLowerCase().includes(query);
       return categoryMatches && textMatches && (!mineOnly || task.createdByMe);
     });
@@ -183,11 +226,12 @@ function renderHome() {
     event.currentTarget.textContent = mineOnly ? "All Tasks ›" : "My Tasks ›";
     update();
   });
-  update();
+  if (prefs && prefs.sort && prefs.sort !== "newest") { sort.value = prefs.sort; sort.dispatchEvent(new Event("change")); }
+  else update();
 }
 
 function detailMarkup(task, review = false, ownerView = false) {
-  return `${imageMarkup(task,"hero-image")}<div class="detail-heading"><h2>${escapeHtml(task.title)}</h2><strong>${escapeHtml(task.reward || task.summary || "$8")}</strong></div><p class="detail-row"><span><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 12-9 12S3 17 3 10a9 9 0 1 1 18 0Z"/><circle cx="12" cy="10" r="3"/></svg></span>${escapeHtml(task.location)}</p><p class="detail-row"><span><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 2v6M17 2v6M3 11h18"/></svg></span>${escapeHtml(task.time)}</p>${Number.isFinite(taskDuration(task)) ? `<p class="detail-row">Estimated duration: ${escapeHtml(task.durationMinutes)} min</p>` : ""}${review ? "" : `<div class="poster-row"><span class="avatar">👤</span><span><p>Posted by ${escapeHtml(task.poster || "gator_user")}</p><small>${escapeHtml(task.posted || "Just now")}</small></span>${ownerView ? "" : `<button class="outline-button" type="button" data-action="message">Message</button>`}</div>`}<section class="detail-section"><h3>Description</h3><p>${escapeHtml(task.description)}</p></section><section class="detail-section"><h3>Location</h3><div class="detail-map" id="detail-map" role="region" aria-label="Map showing ${escapeHtml(task.location)}"></div></section>${review ? "" : `<button class="primary-button offer-button" type="button" data-action="complete">${ownerView ? "Complete Task & Review Runner" : "Complete Task & Review Submitter"}</button>`}`;
+  return `${task.image ? imageMarkup(task,"hero-image") : ""}<div class="detail-heading"><h2>${escapeHtml(task.title)}</h2><strong>${escapeHtml(task.reward || task.summary || "$8")}</strong></div><p class="detail-row"><span><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 12-9 12S3 17 3 10a9 9 0 1 1 18 0Z"/><circle cx="12" cy="10" r="3"/></svg></span>${escapeHtml(task.location)}</p><p class="detail-row"><span><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 2v6M17 2v6M3 11h18"/></svg></span>${escapeHtml(task.time)}</p>${Number.isFinite(taskDuration(task)) ? `<p class="detail-row">Estimated duration: ${escapeHtml(task.durationMinutes)} min</p>` : ""}${review ? "" : `<div class="poster-row">${avatarMarkup(task.posterAvatar, task.poster || "gator_user")}<span><p>Posted by ${escapeHtml(task.poster || "gator_user")}</p><small>${escapeHtml(task.posted || "Just now")}</small></span>${ownerView || task.createdByMe ? "" : `<button class="outline-button" type="button" data-action="message">Message</button>`}</div>`}<section class="detail-section"><h3>Description</h3><p>${escapeHtml(task.description)}</p></section><section class="detail-section"><h3>Location</h3><div class="detail-map" id="detail-map" role="region" aria-label="Map showing ${escapeHtml(task.location)}"></div></section>${review ? "" : `<button class="primary-button offer-button" type="button" data-action="complete">${ownerView ? "Complete Task & Review Runner" : "Complete Task & Review Submitter"}</button>`}`;
 }
 
 // Small real map for the review and detail pages; falls back to matching the location text against places.json for older tasks without coordinates.
@@ -213,13 +257,13 @@ function renderDetail() {
   const ownerView = params.get("owner") === "1";
   const task = getAllTasks().find(item => item.id === id) || sampleTasks[0];
   $("#task-detail").innerHTML = detailMarkup(task,false,ownerView);
-  window.addEventListener("load",() => showTaskMap(task));
+  whenLoaded(() => showTaskMap(task));
   document.querySelectorAll("[data-action]").forEach(button => button.addEventListener("click", () => {
     if (button.dataset.action === "complete") {
       openReviewModal(task, ownerView);
       return;
     }
-    openChatForTask(task,button.dataset.action === "offer");
+    openChatForTask(task);
   }));
 }
 
@@ -296,6 +340,18 @@ async function openReviewModal(task, ownerView) {
 }
 
 async function renderProfile() {
+  const openModal = modal => {
+    modal.hidden = false;
+    const close = () => { modal.hidden = true; modal.removeEventListener("click",onClick); };
+    const onClick = event => { if (event.target === modal || event.target.closest("[data-close]")) close(); };
+    modal.addEventListener("click",onClick);
+  };
+  document.querySelectorAll("[data-open]").forEach(button => button.addEventListener("click",() => {
+    const target = document.getElementById(button.dataset.open);
+    if (target.classList.contains("sheet")) openSheet(target); else openModal(target);
+  }));
+  document.querySelectorAll("[data-soon]").forEach(button => button.addEventListener("click",() => showToast(`${button.dataset.soon} is coming soon`)));
+
   const logoutButton = $("#logout-button");
   logoutButton.addEventListener("click", async () => {
     logoutButton.disabled = true;
@@ -310,6 +366,134 @@ async function renderProfile() {
     }
   });
 
+  // Removes this account's tasks, chats, messages, written reviews and preferences, but keeps the login.
+  $("#remove-data").addEventListener("click", async () => {
+    if (!confirm("Remove all of your data? Your tasks, chats, messages, reviews you wrote and your preferences will be deleted. Your account stays.")) return;
+    try {
+      await chatApi("/account/clear-data",{method:"POST"});
+      [STORAGE_KEY,DRAFT_KEY,PREFS_KEY].forEach(key => localStorage.removeItem(key));
+      location.href = "onboarding.html";
+    } catch (error) { showToast(error.message); }
+  });
+  $("#delete-account").addEventListener("click", async () => {
+    if (!confirm("Delete your account and all of its data? This cannot be undone.")) return;
+    try {
+      await chatApi("/account",{method:"DELETE"});
+      [STORAGE_KEY,DRAFT_KEY,PREFS_KEY].forEach(key => localStorage.removeItem(key));
+      location.href = "login.html";
+    } catch (error) { showToast(error.message); }
+  });
+
+  // Profile picture: shrink to 256px and store it on the account.
+  const avatarInput = $("#avatar-input");
+  $("#change-photo").addEventListener("click",() => avatarInput.click());
+  avatarInput.addEventListener("change",async event => {
+    const file = event.target.files[0];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      const src = await shrinkImage(file,256);
+      await chatApi("/account/avatar",{method:"PUT",body:{src}});
+      $("#profile-photo").innerHTML = avatarMarkup(src,"","profile-photo-inner");
+      $("#settings-modal").hidden = true;
+      showToast("Profile picture updated");
+    } catch (error) { showToast(error.message || "Couldn't use that picture"); }
+  });
+
+  // Notification settings
+  const notifyForm = $("#notify-form");
+  chatApi("/notification-settings").then(({settings}) => {
+    notifyForm.elements.newTasks.checked = settings.newTasks;
+    notifyForm.elements.chatMessages.checked = settings.chatMessages;
+  }).catch(() => {});
+  notifyForm.addEventListener("submit",async event => {
+    event.preventDefault();
+    try {
+      await chatApi("/notification-settings",{method:"PUT",body:{newTasks:notifyForm.elements.newTasks.checked,chatMessages:notifyForm.elements.chatMessages.checked}});
+      $("#notify-sheet").hidden = true;
+      showToast("Notification settings saved");
+    } catch (error) { showToast(error.message); }
+  });
+
+  // Contact Us intake form (stored for the team; nothing is emailed yet).
+  const contactForm = $("#contact-form");
+  contactForm.addEventListener("submit",async event => {
+    event.preventDefault();
+    const error = $("#contact-error");
+    error.hidden = true;
+    if (!contactForm.reportValidity()) return;
+    const data = new FormData(contactForm);
+    try {
+      const {reference} = await chatApi("/contact",{method:"POST",body:{topic:data.get("topic"),email:data.get("email"),message:data.get("message")}});
+      contactForm.hidden = true;
+      $("#contact-done").hidden = false;
+      $("#contact-done").innerHTML = `<strong>Thanks, we got your message.</strong><p>Your reference number is <b>${escapeHtml(reference)}</b>. We'll reply to ${escapeHtml(data.get("email"))}.</p><button type="button" class="outline-button sheet-again" id="contact-again">Send another message</button>`;
+      // Start a fresh request, keeping the reply email.
+      $("#contact-again").addEventListener("click",() => {
+        const email = contactForm.elements.email.value;
+        contactForm.reset();
+        contactForm.elements.email.value = email;
+        $("#contact-done").hidden = true;
+        contactForm.hidden = false;
+      });
+    } catch (problem) { error.textContent = problem.message; error.hidden = false; }
+  });
+
+  // Report Fraud: search for a user, pick a reason, store the report.
+  const reportForm = $("#report-form"), results = $("#report-results"), selected = $("#report-selected");
+  let reportUser = null, searchTimer;
+  const pickUser = user => {
+    reportUser = user;
+    results.innerHTML = "";
+    selected.hidden = false;
+    selected.innerHTML = `Reporting ${avatarMarkup(user.avatar,user.username,"mini-avatar")}<b>${escapeHtml(user.username)}</b> <button type="button" id="report-change">Change</button>`;
+    $("#report-change").addEventListener("click",() => { reportUser = null; selected.hidden = true; $("#report-search").value = ""; $("#report-search").focus(); });
+  };
+  $("#report-search").addEventListener("input",event => {
+    clearTimeout(searchTimer);
+    const q = event.target.value.trim();
+    searchTimer = setTimeout(async () => {
+      if (q.length < 2) { results.innerHTML = ""; return; }
+      try {
+        const {users} = await chatApi(`/users/search?q=${encodeURIComponent(q)}`);
+        results.innerHTML = users.length ? users.map((user,index) => `<button type="button" class="user-result" data-index="${index}">${avatarMarkup(user.avatar,user.username,"mini-avatar")}<span>${escapeHtml(user.username)}</span></button>`).join("") : '<p class="empty-state">No users match that name.</p>';
+        results.querySelectorAll(".user-result").forEach(button => button.addEventListener("click",() => pickUser(users[Number(button.dataset.index)])));
+      } catch {}
+    },250);
+  });
+  reportForm.addEventListener("submit",async event => {
+    event.preventDefault();
+    const error = $("#report-error");
+    error.hidden = true;
+    if (!reportUser) { error.textContent = "Search for the user you want to report and select them."; error.hidden = false; return; }
+    if (!reportForm.reportValidity()) return;
+    const data = new FormData(reportForm);
+    try {
+      const {reference} = await chatApi("/reports",{method:"POST",body:{userId:reportUser.id,reason:data.get("reason"),details:data.get("details") || ""}});
+      reportForm.hidden = true;
+      $("#report-done").hidden = false;
+      $("#report-done").innerHTML = `<strong>Your report has been received.</strong><p>We've recorded your report about <b>${escapeHtml(reportUser.username)}</b>. Reference number: <b>${escapeHtml(reference)}</b>.</p><button type="button" class="outline-button sheet-again" id="report-again">File another report</button>`;
+      // Start a fresh report with nobody selected.
+      $("#report-again").addEventListener("click",() => {
+        reportForm.reset();
+        reportUser = null;
+        selected.hidden = true;
+        results.innerHTML = "";
+        $("#report-done").hidden = true;
+        reportForm.hidden = false;
+      });
+    } catch (problem) { error.textContent = problem.message; error.hidden = false; }
+  });
+
+  // Drafts saved on this device plus every request this account has posted.
+  let draft;
+  try { draft = JSON.parse(localStorage.getItem(DRAFT_KEY)); } catch { draft = null; }
+  const mine = getSavedTasks().filter(task => task.createdByMe);
+  const row = (href, title, meta, badge) => `<a class="request-row" href="${href}"><span class="request-main"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(meta)}</small></span>${badge ? `<b>${escapeHtml(badge)}</b>` : ""}</a>`;
+  $("#request-list").innerHTML =
+    `<h3 class="request-heading">Draft</h3>${draft ? row("add-task.html", draft.title || "Untitled draft", draft.location || "Not posted yet", "Draft") : '<p class="empty-state">No saved draft.</p>'}` +
+    `<h3 class="request-heading">My requests</h3>${mine.length ? mine.map(task => row(`task-detail.html?id=${encodeURIComponent(task.id)}&owner=1`, task.title, [task.location, task.time].filter(Boolean).join(" · "), task.reward || task.summary || "")).join("") : '<p class="empty-state">You haven\'t posted any requests yet.</p>'}`;
+
   try {
     const response = await fetch("/api/profile");
     if (response.status === 401) {
@@ -319,12 +503,15 @@ async function renderProfile() {
     if (!response.ok) throw new Error("Profile request failed");
     const {profile} = await response.json();
     const rating = Number(profile.rating);
-    $("#profile-summary").innerHTML = `<div class="profile-avatar">♙</div><h2>${escapeHtml(profile.username)}</h2><p>${escapeHtml(profile.email)}</p><div class="profile-rating" aria-label="${rating} out of 5 stars"><strong>${rating.toFixed(1)}</strong><span>★</span><small>${profile.review_count} review${profile.review_count === 1 ? "" : "s"}</small></div>`;
+    if (!$("#contact-form").elements.email.value) $("#contact-form").elements.email.value = profile.email || "";
+    $("#profile-name").textContent = profile.username;
+    $("#profile-photo").innerHTML = avatarMarkup(profile.avatar, profile.username, "profile-photo-inner");
+    $("#profile-summary").innerHTML = `<p>${escapeHtml(profile.email)}</p><div class="profile-rating" aria-label="${rating} out of 5 stars"><strong>${rating.toFixed(1)}</strong><span>★</span><small>${profile.review_count} review${profile.review_count === 1 ? "" : "s"}</small></div>`;
     const reviews = profile.reviews || [];
     $("#review-list").innerHTML = reviews.length ? reviews.map(review => `<article class="review-card"><strong>From ${escapeHtml(review.reviewer || "Gator Board member")}</strong><div class="review-stars" aria-label="${review.rating} out of 5 stars">${"★".repeat(review.rating)}${"☆".repeat(5 - review.rating)}</div>${review.comment ? `<p>${escapeHtml(review.comment)}</p>` : "<p class=\"muted-review\">No comment provided.</p>"}</article>`).join("") : '<p class="empty-state">No reviews yet. Complete a task to leave the first one.</p>';
   } catch (error) {
     console.error("Profile error:", error);
-    $("#profile-summary").innerHTML = '<p class="form-error">Unable to load your profile.</p>';
+    $("#profile-name").textContent = "Unable to load your profile.";
   }
 }
 
@@ -376,14 +563,23 @@ function renderRatingReview() {
   });
 }
 
+// A reward is either an amount of money or free text such as "a coffee".
+function rewardText(data) {
+  return data.get("rewardType") === "other" ? String(data.get("rewardOther") || "").trim() : `$${data.get("reward")}`;
+}
+
 function readForm(form) {
   const data = new FormData(form);
-  return {durationMinutes: data.get("durationMinutes") ? Number(data.get("durationMinutes")) : null,id:`task-${Date.now()}`,title:data.get("title").trim(),summary:`$${data.get("reward")}`,reward:`$${data.get("reward")}`,category:data.get("category"),description:data.get("description").trim(),location:data.get("location").trim(),...(data.get("lat") && data.get("lng") ? {lat:Number(data.get("lat")),lng:Number(data.get("lng"))} : {}),time:data.get("time").trim(),cardTime:data.get("time").trim(),poster:"you",posted:"Just now",createdByMe:true,icon:data.get("category") === "Study" ? "▭" : "◇"};
+  return {durationMinutes: data.get("durationMinutes") ? Number(data.get("durationMinutes")) : null,title:data.get("title").trim(),summary:rewardText(data),reward:rewardText(data),rewardType:data.get("rewardType") === "other" ? "other" : "money",category:data.get("category"),description:data.get("description").trim(),location:data.get("location").trim(),...(data.get("lat") && data.get("lng") ? {lat:Number(data.get("lat")),lng:Number(data.get("lng"))} : {}),time:data.get("time").trim(),cardTime:data.get("time").trim(),posted:"Just now",icon:data.get("category") === "Study" ? "▭" : "◇"};
 }
 
 function fillForm(form, draft) {
   if (!draft) return;
-  ["title","description","location","time","reward","lat","lng","durationMinutes"].forEach(name => { if (form.elements[name] && draft[name] != null) form.elements[name].value = name === "reward" ? String(draft.reward).replace("$","") : draft[name]; });
+  ["title","description","location","time","lat","lng","durationMinutes"].forEach(name => { if (form.elements[name] && draft[name] != null) form.elements[name].value = draft[name]; });
+  if (draft.rewardType === "other") {
+    form.querySelector('[name="rewardType"][value="other"]').checked = true;
+    form.elements.rewardOther.value = draft.reward || "";
+  } else if (draft.reward != null) form.elements.reward.value = String(draft.reward).replace("$","");
   const category = form.querySelector(`[name="category"][value="${CSS.escape(draft.category || "Errand")}"]`);
   if (category) category.checked = true;
 }
@@ -482,18 +678,37 @@ function renderAdd() {
   try { draft = JSON.parse(localStorage.getItem(DRAFT_KEY)); } catch { draft = null; }
   fillForm(form,draft);
   // Wait for window load: the map code below the page dispatch lines must have run first.
-  window.addEventListener("load",() => setupLocationPicker(form));
+  whenLoaded(() => setupLocationPicker(form));
+  const moneyField = $("#reward-money"), otherField = $("#reward-other");
+  const syncReward = () => {
+    const other = form.elements.rewardType.value === "other";
+    moneyField.hidden = other;
+    otherField.hidden = !other;
+    form.elements.reward.required = !other;
+    form.elements.rewardOther.required = other;
+  };
+  form.querySelectorAll('[name="rewardType"]').forEach(radio => radio.addEventListener("change",syncReward));
+  syncReward();
+  const preview = $("#photo-preview");
+  let photoData = draft && draft.image || "";
+  const showPhoto = () => { preview.hidden = !photoData; if (photoData) preview.querySelector("img").src = photoData; };
+  form.elements.photo.addEventListener("change",async event => {
+    const file = event.target.files[0];
+    if (!file) return;
+    try { photoData = await shrinkImage(file); showPhoto(); } catch { showToast("Couldn't read that picture"); event.target.value = ""; }
+  });
+  $("#photo-remove").addEventListener("click",() => { photoData = ""; form.elements.photo.value = ""; showPhoto(); });
+  showPhoto();
   form.addEventListener("submit", event => {
     event.preventDefault();
     if (!form.reportValidity()) return;
     if (!form.elements.lat.value) { showToast("Pick a spot on the map so people can find the task"); $("#location-map").scrollIntoView({block:"center",behavior:"smooth"}); return; }
     const task = readForm(form);
-    const photo = form.elements.photo.files[0];
-    const saveAndReview = () => { localStorage.setItem(DRAFT_KEY,JSON.stringify(task)); location.href="review-task.html"; };
-    if (photo) { const reader = new FileReader(); reader.onload = () => { task.image=reader.result; saveAndReview(); }; reader.readAsDataURL(photo); }
-    else saveAndReview();
+    if (photoData) task.image = photoData;
+    localStorage.setItem(DRAFT_KEY,JSON.stringify(task));
+    location.href = "review-task.html";
   });
-  $("#save-draft").addEventListener("click", () => { localStorage.setItem(DRAFT_KEY,JSON.stringify(readForm(form))); showToast("Draft saved on this device"); });
+  $("#save-draft").addEventListener("click", () => { const draftTask = readForm(form); if (photoData) draftTask.image = photoData; localStorage.setItem(DRAFT_KEY,JSON.stringify(draftTask)); showToast("Draft saved on this device"); });
 }
 
 async function renderReview() {
@@ -501,20 +716,23 @@ async function renderReview() {
   try { task = JSON.parse(localStorage.getItem(DRAFT_KEY)); } catch { task = null; }
   if (!task) { location.replace("add-task.html"); return; }
   $("#review-detail").innerHTML = detailMarkup(task,true);
-  window.addEventListener("load",() => showTaskMap(task));
+  whenLoaded(() => showTaskMap(task));
   $("#publish-task").addEventListener("click", async () => {
-    const tasks = getSavedTasks();
-    const response = await fetch("/api/me");
-    if (!response.ok) {
-      location.href = "login.html";
-      return;
+    const button = $("#publish-task");
+    button.disabled = true;
+    try {
+      const response = await fetch("/api/tasks",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({task})});
+      if (response.status === 401) { location.href = "login.html"; return; }
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Couldn't publish your task.");
+      const published = {...result.task,createdByMe:true};
+      localStorage.setItem(STORAGE_KEY,JSON.stringify([published,...getSavedTasks().filter(item => item.id !== published.id)]));
+      localStorage.removeItem(DRAFT_KEY);
+      location.href = `task-posted.html?id=${encodeURIComponent(published.id)}`;
+    } catch (error) {
+      showToast(error.message);
+      button.disabled = false;
     }
-    const {user} = await response.json();
-    const publishedTask = {...task,id:`task-${Date.now()}`,createdByMe:true,submitterId:user.id,poster:user.username};
-    tasks.unshift(publishedTask);
-    localStorage.setItem(STORAGE_KEY,JSON.stringify(tasks));
-    localStorage.removeItem(DRAFT_KEY);
-    location.href=`task-posted.html?id=${encodeURIComponent(publishedTask.id)}`;
   });
 }
 
@@ -530,13 +748,15 @@ syncHomeEntry();
 window.addEventListener("hashchange", syncHomeEntry);
 document.querySelectorAll("[data-placeholder]").forEach(button => button.addEventListener("click", () => showToast(`${button.dataset.placeholder} is coming soon`)));
 
-if (page === "home") { renderHome(); if (location.hash === "#published") showToast("Task published successfully!"); }
-if (page === "detail") renderDetail();
-if (page === "add") renderAdd();
-if (page === "review") renderReview();
-if (page === "posted") renderPosted();
-if (page === "profile") renderProfile();
-if (page === "rating-review") renderRatingReview();
+tasksReady.then(() => {
+  if (page === "home") { renderHome(); if (location.hash === "#published") showToast("Task published successfully!"); }
+  if (page === "detail") renderDetail();
+  if (page === "add") renderAdd();
+  if (page === "review") renderReview();
+  if (page === "posted") renderPosted();
+  if (page === "profile") renderProfile();
+  if (page === "rating-review") renderRatingReview();
+  });
 
 document.querySelectorAll("[data-close-review]").forEach(element => element.addEventListener("click", () => {
   $("#review-modal").hidden = true;
@@ -627,11 +847,15 @@ function renderMap() {
   const savedRequests = getSavedTasks().filter(task => Number.isFinite(task.lat) && Number.isFinite(task.lng)).map(task => ({kind:"tasks",title:task.title.length > 22 ? `${task.title.slice(0,21)}…` : task.title,full:task.title,taskId:task.id,category:task.category,lat:task.lat,lng:task.lng}));
   const allRequests = mapRequests.concat(savedRequests);
   let markers = [];
-  const state = {kind:"tasks",category:"all",query:"",always:false};
+  const prefs = getPrefs();
+  const wanted = category => !prefs || prefs.categories.includes(category);
+  const state = {kind:prefs ? prefs.mapView : "tasks",category:"all",query:"",always:false};
+  document.querySelectorAll(".map-kind-button").forEach(button => { const on = button.dataset.kind === state.kind; button.classList.toggle("is-selected",on); button.setAttribute("aria-pressed",on); });
+  document.querySelectorAll(".map-chip").forEach(chip => { if (chip.dataset.category !== "all") chip.hidden = !wanted(chip.dataset.category); });
   const draw = () => {
     markers.forEach(marker => marker.remove());
     const query = state.query.trim().toLowerCase();
-    markers = allRequests.filter(r => r.kind === state.kind && (state.category === "all" || r.category === state.category) && r.title.toLowerCase().includes(query)).map(r => {
+    markers = allRequests.filter(r => r.kind === state.kind && (state.category === "all" ? wanted(r.category) : r.category === state.category) && r.title.toLowerCase().includes(query)).map(r => {
       const element = document.createElement("div");
       element.className = "map-request";
       element.tabIndex = 0;
@@ -697,38 +921,17 @@ function renderMap() {
 }
 if (page === "map") renderMap();
 
-// ---- Chats (stored on this device until profiles and a database exist) ----
-const CHAT_KEY = "gatorBoardChats";
-const CHAT_LOCK_MS = 7 * 24 * 60 * 60 * 1000; // a chat locks after 7 days without messages, or once the task is completed
-
-function seedChats() {
-  const now = Date.now(), minutes = n => now - n * 60000, day = 86400000;
-  const chat = (id, taskId, taskTitle, name, unread, messages, completed = false) => ({id,taskId,taskTitle,name,unread,completed,messages});
-  return [
-    chat("chat-sophia","publix","Pick up groceries at Publix","Sophia M.",2,[{from:"me",text:"I can pick those up for you!",at:minutes(60)},{from:"them",text:"Thanks! See you at Hume Hall.",at:minutes(3)}]),
-    chat("chat-ethan","study-packet","Micro Study Edge Packet","Ethan R.",1,[{from:"me",text:"Offer sent for your study packet.",at:minutes(120)},{from:"them",text:"Is Marston at 3 still good for you?",at:minutes(29)}]),
-    chat("chat-maya","starbucks","Get a coffee from Starbucks","Maya P.",0,[{from:"them",text:"Could you grab a coffee for me?",at:now - day - 3600000},{from:"me",text:"I can grab that on my way!",at:now - day + 60000}]),
-    chat("chat-jordan","","Pick up textbooks","Jordan L.",0,[{from:"them",text:"Can you grab my textbooks?",at:now - 3 * day - 3600000},{from:"me",text:"Perfect, see you there.",at:now - 3 * day}]),
-    chat("chat-alex","package","Pick up a package","Alex T.",0,[{from:"me",text:"Package picked up!",at:now - day - 7200000},{from:"them",text:"Thank you so much for the help!",at:now - day}],true)
-  ];
+// ---- Chats (shared between accounts through the server) ----
+async function chatApi(path, {method = "GET", body} = {}) {
+  const response = await fetch(`/api${path}`, {method,headers:{"Content-Type":"application/json"},body:body ? JSON.stringify(body) : undefined});
+  if (response.status === 401) { location.href = "login.html"; throw new Error("Please log in."); }
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || "Something went wrong.");
+  return result;
 }
 
-function getChats() {
-  try { const saved = JSON.parse(localStorage.getItem(CHAT_KEY)); if (Array.isArray(saved)) return saved; } catch {}
-  const seeded = seedChats();
-  saveChats(seeded);
-  return seeded;
-}
-function saveChats(chats) { localStorage.setItem(CHAT_KEY,JSON.stringify(chats)); }
-const lastMessage = chat => chat.messages[chat.messages.length - 1];
-function lockReason(chat) {
-  if (chat.completed) return "This task was completed, so the chat is locked.";
-  const last = lastMessage(chat);
-  if (last && Date.now() - last.at > CHAT_LOCK_MS) return "This chat was locked after 7 days without messages.";
-  return "";
-}
-const isLocked = chat => Boolean(lockReason(chat));
-const initials = name => name.split(/\s+/).map(part => part[0]).join("").slice(0,2).toUpperCase();
+const initials = name => String(name).split(/\s+|_/).filter(Boolean).map(part => part[0]).join("").slice(0,2).toUpperCase() || "?";
+const lockText = chat => chat.lockReason === "completed" ? "This task was completed, so the chat is locked." : "This chat was locked after 7 days without messages.";
 
 function chatTime(at) {
   const date = new Date(at), today = new Date();
@@ -739,17 +942,15 @@ function chatTime(at) {
   return date.toLocaleDateString([],{month:"short",day:"numeric"});
 }
 
-// "Offer to Complete" / "Message" on a task: reuse the chat for that task or start one with its poster.
-function openChatForTask(task, offer) {
-  const chats = getChats();
-  let chat = chats.find(item => item.taskId === task.id);
-  if (!chat) {
-    chat = {id:`chat-${Date.now()}`,taskId:task.id,taskTitle:task.title,name:task.poster || "Task poster",unread:0,completed:false,messages:[]};
-    chats.unshift(chat);
-  }
-  if (offer && !isLocked(chat) && !chat.messages.some(message => message.offer)) chat.messages.push({from:"me",text:`Hi! I'd like to complete "${task.title}".`,at:Date.now(),offer:true});
-  saveChats(chats);
-  location.href = `chat.html?id=${encodeURIComponent(chat.id)}`;
+const messagePreview = message => message.type === "image" ? "Photo" : message.type === "location" ? "Shared location" : message.body || message.text || "";
+
+// "Message" on a task: open (or start) the chat with whoever posted it.
+async function openChatForTask(task) {
+  if (!Number.isInteger(task.submitterId)) { showToast("This is a sample task. Chats work on tasks posted by accounts."); return; }
+  try {
+    const {chatId} = await chatApi("/chats",{method:"POST",body:{taskId:task.id}});
+    location.href = `chat.html?id=${chatId}`;
+  } catch (error) { showToast(error.message); }
 }
 
 function renderChat() {
@@ -757,47 +958,40 @@ function renderChat() {
   if (id) renderThread(id); else renderChatList();
 }
 
-function renderChatList() {
+async function renderChatList() {
   $("#chat-list-view").hidden = false;
   const list = $("#chat-list"), search = $("#chat-search");
-  let editing = false;
+  let chats = [], me = null;
   const draw = () => {
     const query = search.value.trim().toLowerCase();
-    const all = getChats();
-    const chats = all.filter(chat => `${chat.name} ${chat.taskTitle} ${lastMessage(chat) ? messagePreview(lastMessage(chat)) : ""}`.toLowerCase().includes(query))
-      .sort((a,b) => (lastMessage(b) ? lastMessage(b).at : 0) - (lastMessage(a) ? lastMessage(a).at : 0));
-    const unread = all.reduce((sum,chat) => sum + (isLocked(chat) ? 0 : chat.unread),0);
+    const shown = chats.filter(chat => `${chat.other.username} ${chat.taskTitle} ${chat.lastMessage ? messagePreview(chat.lastMessage) : ""}`.toLowerCase().includes(query));
+    const unread = chats.reduce((sum,chat) => sum + (chat.locked ? 0 : chat.unread),0);
     $("#chat-unread").textContent = unread ? `${unread} unread` : "";
-    $("#chat-empty").hidden = chats.length > 0;
-    list.innerHTML = chats.map(chat => {
-      const last = lastMessage(chat), locked = isLocked(chat), unreadBadge = chat.unread && !locked;
-      const preview = last ? `${last.from === "me" ? "You: " : ""}${messagePreview(last)}` : "No messages yet";
-      return `<div class="chat-row"><a class="chat-card${locked ? " is-locked" : ""}" href="chat.html?id=${encodeURIComponent(chat.id)}"><span class="chat-avatar">${escapeHtml(initials(chat.name))}</span><span class="chat-main"><span class="chat-top"><strong>${escapeHtml(chat.name)}</strong><time>${last ? chatTime(last.at) : ""}</time></span><span class="chat-task">${escapeHtml(chat.taskTitle)}</span><span class="chat-preview${unreadBadge ? " is-unread" : ""}"><span>${escapeHtml(preview)}</span>${unreadBadge ? `<b class="chat-badge">${chat.unread}</b>` : ""}</span></span>${locked ? `<span class="chat-lock">${ic("lock")}Locked</span>` : ""}</a>${editing ? `<button type="button" class="chat-delete" data-id="${escapeHtml(chat.id)}" aria-label="Delete chat with ${escapeHtml(chat.name)}">${ic("x")}</button>` : ""}</div>`;
+    $("#chat-empty").hidden = shown.length > 0;
+    list.innerHTML = shown.map(chat => {
+      const last = chat.lastMessage, unreadBadge = chat.unread && !chat.locked;
+      const preview = last ? `${last.senderId === me ? "You: " : ""}${messagePreview(last)}` : "No messages yet";
+      return `<div class="chat-row"><a class="chat-card${chat.locked ? " is-locked" : ""}" href="chat.html?id=${chat.id}"><span class="chat-avatar">${escapeHtml(initials(chat.other.username))}</span><span class="chat-main"><span class="chat-top"><strong>${escapeHtml(chat.other.username)}</strong><time>${chatTime(chat.lastAt)}</time></span><span class="chat-task">${escapeHtml(chat.taskTitle)}</span><span class="chat-preview${unreadBadge ? " is-unread" : ""}"><span>${escapeHtml(preview)}</span>${unreadBadge ? `<b class="chat-badge">${chat.unread}</b>` : ""}</span></span>${chat.locked ? `<span class="chat-lock">${ic("lock")}Locked</span>` : ""}</a></div>`;
     }).join("");
   };
-  setupNewChat();
+  const load = async () => {
+    try { const result = await chatApi("/chats"); chats = result.chats; me = result.me; draw(); }
+    catch (error) { if (!chats.length) $("#chat-empty").hidden = false; }
+  };
   search.addEventListener("input",draw);
-  $("#chat-edit").addEventListener("click",event => { editing = !editing; event.currentTarget.textContent = editing ? "Done" : "Edit"; draw(); });
-  list.addEventListener("click",event => {
-    const button = event.target.closest(".chat-delete");
-    if (!button) return;
-    saveChats(getChats().filter(chat => chat.id !== button.dataset.id));
-    draw();
-  });
-  draw();
+  await load();
+  setInterval(load,5000);
 }
 
-const messagePreview = message => message.type === "image" ? "Photo" : message.type === "location" ? "Shared location" : message.text;
-
-function messageMarkup(message) {
-  const mine = message.from === "me";
+const messageMarkup = (message, me) => {
+  const mine = message.senderId === me;
   let body = `<p>${escapeHtml(message.text)}</p>`;
   if (message.type === "image") body = `<img class="chat-photo" src="${escapeHtml(message.src)}" alt="Shared photo">`;
   if (message.type === "location") body = `<a class="chat-location" href="map.html?lat=${Number(message.lat)}&lng=${Number(message.lng)}"><span aria-hidden="true">${ic("pin")}</span><span><strong>Shared location</strong><small>${escapeHtml(message.label || "Open on map")}</small></span></a>`;
-  return `<div class="chat-bubble ${mine ? "is-mine" : "is-theirs"}${message.type ? " has-media" : ""}">${body}<time>${chatTime(message.at)}</time></div>`;
-}
+  return `<div class="chat-bubble ${mine ? "is-mine" : "is-theirs"}${message.type !== "text" ? " has-media" : ""}">${body}<time>${chatTime(message.createdAt)}</time></div>`;
+};
 
-// Shrink a picked photo before saving it so it fits in the browser's storage.
+// Shrink a picked photo before saving it so it stays small enough to send and store.
 function shrinkImage(file, max = 800) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -826,40 +1020,50 @@ function openSheet(sheet) {
   sheet.addEventListener("click",onClick);
 }
 
-function renderThread(id) {
-  const chats = getChats(), chat = chats.find(item => item.id === id);
-  if (!chat) { location.replace("chat.html"); return; }
+async function renderThread(id) {
   $("#chat-thread-view").hidden = false;
-  if (chat.unread) { chat.unread = 0; saveChats(chats); }
-  markNotificationsRead(`chat-${chat.id}-`);
   const log = $("#chat-log"), form = $("#chat-form"), input = form.elements.message, notice = $("#chat-lock-note");
-  const lockedControls = form.querySelectorAll("button, #photo-input");
-  $("#thread-name").textContent = chat.name;
-  $("#thread-task").textContent = chat.taskTitle;
-  const draw = () => {
-    const locked = isLocked(chat);
-    log.innerHTML = chat.messages.map(messageMarkup).join("") || '<p class="chat-empty-thread">Say hello to start the conversation.</p>';
+  const lockables = form.querySelectorAll("button, #photo-input");
+  let chat = null, me = null, messages = [], lastId = 0;
+  const draw = (scroll = true) => {
+    const locked = chat.locked;
+    $("#thread-name").textContent = chat.other.username;
+    $("#thread-task").textContent = chat.taskTitle;
+    log.innerHTML = messages.map(message => messageMarkup(message,me)).join("") || '<p class="chat-empty-thread">Say hello to start the conversation.</p>';
     notice.hidden = !locked;
-    notice.textContent = lockReason(chat);
+    notice.textContent = locked ? lockText(chat) : "";
     input.disabled = locked;
-    lockedControls.forEach(control => { control.disabled = locked; });
+    lockables.forEach(control => { control.disabled = locked; });
     input.placeholder = locked ? "Chat locked" : "Write a message…";
-    $("#complete-task").hidden = locked;
-    log.lastElementChild && log.lastElementChild.scrollIntoView({block:"end"});
+    $("#complete-task").hidden = locked || !chat.isOwner;
+    if (scroll && log.lastElementChild) log.lastElementChild.scrollIntoView({block:"end"});
   };
-  const send = message => {
-    if (isLocked(chat)) return;
-    chat.messages.push({from:"me",at:Date.now(),...message});
-    try { saveChats(chats); }
-    catch { chat.messages.pop(); showToast("Couldn't save that, device storage is full"); return; }
-    draw();
+  const apply = result => {
+    chat = result.chat; me = result.me;
+    const fresh = result.messages.filter(message => !messages.some(known => known.id === message.id));
+    messages = messages.concat(fresh);
+    lastId = messages.length ? messages[messages.length - 1].id : 0;
+    draw(fresh.length > 0 || !log.children.length);
+  };
+  try { apply(await chatApi(`/chats/${encodeURIComponent(id)}`)); }
+  catch (error) { showToast(error.message); location.replace("chat.html"); return; }
+  const poll = async () => { try { apply(await chatApi(`/chats/${encodeURIComponent(id)}?after=${lastId}`)); } catch {} };
+  setInterval(poll,3000);
+
+  const send = async message => {
+    try {
+      const {message: saved} = await chatApi(`/chats/${encodeURIComponent(id)}/messages`,{method:"POST",body:message});
+      if (!messages.some(known => known.id === saved.id)) messages.push(saved);
+      lastId = Math.max(lastId,saved.id);
+      draw();
+    } catch (error) { showToast(error.message); poll(); }
   };
   form.addEventListener("submit",event => {
     event.preventDefault();
     const text = input.value.trim();
     if (!text) return;
     input.value = "";
-    send({text});
+    send({type:"text",text});
   });
   $("#photo-input").addEventListener("change",async event => {
     const file = event.target.files[0];
@@ -877,11 +1081,12 @@ function renderThread(id) {
       send({type:"location",lat:+spot.lat.toFixed(5),lng:+spot.lng.toFixed(5),label:closest && closest.distance < 0.25 ? `Near ${closest.place.n}` : "Current location"});
     },() => showToast("Couldn't get your location"),{enableHighAccuracy:true,timeout:10000});
   });
-  $("#complete-task").addEventListener("click",() => {
-    chat.completed = true;
-    saveChats(chats);
-    showToast("Task marked complete. Chat locked.");
-    draw();
+  $("#complete-task").addEventListener("click",async () => {
+    try {
+      await chatApi(`/chats/${encodeURIComponent(id)}/complete`,{method:"POST"});
+      showToast("Task marked complete. Chat locked.");
+      poll();
+    } catch (error) { showToast(error.message); }
   });
   $("#show-request").addEventListener("click",() => {
     const task = getAllTasks().find(item => item.id === chat.taskId);
@@ -890,80 +1095,15 @@ function renderThread(id) {
       : `<h2>${escapeHtml(chat.taskTitle)}</h2><p class="sheet-description">The details for this request are no longer available.</p>`;
     openSheet($("#request-sheet"));
   });
-  draw();
 }
-
-// "New chat": pick someone else's open request and start a conversation with its poster.
-function setupNewChat() {
-  $("#new-chat").addEventListener("click",() => {
-    const requests = getAllTasks().filter(task => !task.createdByMe);
-    $("#new-chat-list").innerHTML = requests.map(task => `<button type="button" class="sheet-row" data-id="${escapeHtml(task.id)}"><span class="chat-avatar">${escapeHtml(initials(task.poster || "Task poster"))}</span><span class="sheet-row-main"><strong>${escapeHtml(task.poster || "Task poster")}</strong><small>${escapeHtml(task.title)}</small></span><b>${escapeHtml(task.reward || task.summary || "")}</b></button>`).join("") || '<p class="empty-state">No open requests right now.</p>';
-    openSheet($("#new-chat-sheet"));
-  });
-  $("#new-chat-list").addEventListener("click",event => {
-    const row = event.target.closest(".sheet-row");
-    const task = row && getAllTasks().find(item => item.id === row.dataset.id);
-    if (task) openChatForTask(task,false);
-  });
-}
-
 if (page === "chat") renderChat();
 
-// ---- Notifications (stored on this device until there is a backend feed) ----
-const NOTIFICATION_KEY = "gatorBoardNotifications";
-const SEEN_TASKS_KEY = "gatorBoardSeenTasks";
-const NEARBY_KM = 3;
-
-function getNotifications() {
-  try { const saved = JSON.parse(localStorage.getItem(NOTIFICATION_KEY)); if (Array.isArray(saved)) return saved; } catch {}
-  return [];
-}
-function saveNotifications(items) { localStorage.setItem(NOTIFICATION_KEY,JSON.stringify(items.sort((a,b) => b.at - a.at).slice(0,50))); }
-
-function addNotification(item) {
-  const items = getNotifications();
-  if (items.some(existing => existing.id === item.id)) return false;
-  items.push({read:false,at:Date.now(),...item});
-  saveNotifications(items);
-  return true;
+function taskIcon(task) {
+ const icons = {"Study":"<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 5C8 2 4 3 2 4v16c3-2 7-2 10 0 3-2 7-2 10 0V4c-3-2-7-2-10 1Zm0 0v15\"/></svg>","Delivery":"<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m12 2 10 5-10 6L2 7l10-5Zm-10 5v10l10 5 10-5V7M12 13v9M7 4.5l10 5v6\"/></svg>","Errand":"<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 7h14l1 14H4L5 7Z\"/><path d=\"M8 9V6a4 4 0 0 1 8 0v3\"/></svg>","Food":"<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M4 3v7a3 3 0 0 0 6 0V3M7 3v18M20 3c-5 1-5 11 0 11V3Zm0 11v7\"/></svg>"};
+ return icons[task.category] || icons.Delivery;
 }
 
-function markNotificationsRead(idPrefix) {
-  const items = getNotifications();
-  let changed = false;
-  items.forEach(item => { if (!item.read && item.id.startsWith(idPrefix)) { item.read = true; changed = true; } });
-  if (changed) saveNotifications(items);
-  return changed;
-}
-
-// Turn unread chat messages and newly posted nearby tasks from other people into notifications.
-function syncNotifications() {
-  getChats().forEach(chat => {
-    const last = lastMessage(chat);
-    if (!chat.unread || isLocked(chat) || !last || last.from === "me") return;
-    addNotification({id:`chat-${chat.id}-${last.at}`,type:"chat",title:chat.name,body:`${messagePreview(last)} · ${chat.taskTitle}`,href:`chat.html?id=${encodeURIComponent(chat.id)}`,at:last.at});
-  });
-  const tasks = getAllTasks();
-  let seen;
-  try { seen = JSON.parse(localStorage.getItem(SEEN_TASKS_KEY)); } catch { seen = null; }
-  if (!Array.isArray(seen)) { localStorage.setItem(SEEN_TASKS_KEY,JSON.stringify(tasks.map(task => task.id))); return; } // first run: don't flood with existing tasks
-  const fresh = tasks.filter(task => !seen.includes(task.id));
-  fresh.forEach(task => {
-    const hasSpot = Number.isFinite(task.lat) && Number.isFinite(task.lng);
-    const nearby = !hasSpot || distanceKm({lat:task.lat,lng:task.lng},{lat:CAMPUS_CENTER[1],lng:CAMPUS_CENTER[0]}) <= NEARBY_KM;
-    if (nearby && !task.createdByMe) addNotification({id:`task-${task.id}`,type:"task",title:"New task nearby",body:`${task.title} · ${task.reward || task.summary || ""}${task.location ? ` · ${task.location}` : ""}`,href:`task-detail.html?id=${encodeURIComponent(task.id)}`});
-  });
-  if (fresh.length) localStorage.setItem(SEEN_TASKS_KEY,JSON.stringify(tasks.map(task => task.id)));
-}
-
-function timeAgo(at) {
-  const minutes = Math.round((Date.now() - at) / 60000);
-  if (minutes < 1) return "Just now";
-  if (minutes < 60) return `${minutes} min ago`;
-  if (minutes < 1440) return `${Math.round(minutes / 60)} hr ago`;
-  return chatTime(at);
-}
-
+// ---- Notifications (new tasks that match your interests, new chat messages) ----
 function setupNotifications() {
   const bells = document.querySelectorAll(".notification");
   if (!bells.length) return;
@@ -973,34 +1113,39 @@ function setupNotifications() {
   sheet.setAttribute("role","dialog");
   sheet.setAttribute("aria-label","Notifications");
   sheet.hidden = true;
-  sheet.innerHTML = `<div class="sheet-card"><button type="button" class="sheet-close" data-close aria-label="Close">${ic("x")}</button><h2>Notifications</h2><button type="button" class="notice-readall" id="notice-readall">Mark all as read</button><div id="notice-list"></div></div>`;
+  sheet.innerHTML = '<div class="sheet-card"><button type="button" class="sheet-close" data-close aria-label="Close">✕</button><h2>Notifications</h2><button type="button" class="notice-readall" id="notice-readall">Mark all as read</button><div id="notice-list"></div></div>';
   document.body.appendChild(sheet);
   const list = sheet.querySelector("#notice-list");
+  let items = [];
+  const ago = at => {
+    const minutes = Math.round((Date.now() - new Date(at).getTime()) / 60000);
+    if (minutes < 1) return "Just now";
+    if (minutes < 60) return `${minutes} min ago`;
+    if (minutes < 1440) return `${Math.round(minutes / 60)} hr ago`;
+    return chatTime(at);
+  };
   const draw = () => {
-    const items = getNotifications();
     const unread = items.filter(item => !item.read).length;
     bells.forEach(bell => { bell.classList.toggle("has-unread",unread > 0); bell.setAttribute("aria-label",unread ? `Notifications, ${unread} unread` : "Notifications"); });
     sheet.querySelector("#notice-readall").hidden = !unread;
-    list.innerHTML = items.map(item => `<button type="button" class="notice${item.read ? "" : " is-unread"}" data-id="${escapeHtml(item.id)}"><span class="notice-icon">${ic(item.type === "chat" ? "chat" : "pin")}</span><span class="notice-main"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.body)}</small></span><time>${timeAgo(item.at)}</time></button>`).join("") || '<p class="empty-state">You\'re all caught up.</p>';
+    list.innerHTML = items.map(item => `<button type="button" class="notice${item.read ? "" : " is-unread"}" data-id="${item.id}"><span class="notice-icon">${ic(item.type === "chat" ? "chat" : "pin")}</span><span class="notice-main"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.body || "")}</small></span><time>${ago(item.createdAt)}</time></button>`).join("") || '<p class="empty-state">You\'re all caught up.</p>';
   };
-  bells.forEach(bell => bell.addEventListener("click",() => { syncNotifications(); draw(); openSheet(sheet); }));
-  list.addEventListener("click",event => {
+  const load = async () => {
+    try { items = (await chatApi("/notifications")).notifications; draw(); } catch {}
+  };
+  bells.forEach(bell => bell.addEventListener("click",() => { load(); openSheet(sheet); }));
+  list.addEventListener("click",async event => {
     const row = event.target.closest(".notice");
     if (!row) return;
-    const item = getNotifications().find(entry => entry.id === row.dataset.id);
-    markNotificationsRead(row.dataset.id);
-    if (item && item.href) location.href = item.href; else draw();
+    const item = items.find(entry => entry.id === Number(row.dataset.id));
+    try { await chatApi("/notifications/read",{method:"POST",body:{id:Number(row.dataset.id)}}); } catch {}
+    if (item && item.href) location.href = item.href; else load();
   });
-  sheet.querySelector("#notice-readall").addEventListener("click",() => { markNotificationsRead(""); draw(); });
-  const refresh = () => { syncNotifications(); draw(); };
-  window.addEventListener("storage",refresh);
-  setInterval(refresh,15000);
-  refresh();
+  sheet.querySelector("#notice-readall").addEventListener("click",async () => {
+    try { await chatApi("/notifications/read",{method:"POST",body:{id:"all"}}); } catch {}
+    load();
+  });
+  load();
+  setInterval(load,20000);
 }
-syncNotifications();
-setupNotifications();
-
-function taskIcon(task) {
- const icons = {"Study":"<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 5C8 2 4 3 2 4v16c3-2 7-2 10 0 3-2 7-2 10 0V4c-3-2-7-2-10 1Zm0 0v15\"/></svg>","Delivery":"<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m12 2 10 5-10 6L2 7l10-5Zm-10 5v10l10 5 10-5V7M12 13v9M7 4.5l10 5v6\"/></svg>","Errand":"<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 7h14l1 14H4L5 7Z\"/><path d=\"M8 9V6a4 4 0 0 1 8 0v3\"/></svg>","Food":"<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M4 3v7a3 3 0 0 0 6 0V3M7 3v18M20 3c-5 1-5 11 0 11V3Zm0 11v7\"/></svg>"};
- return icons[task.category] || icons.Delivery;
-}
+tasksReady.then(setupNotifications);
