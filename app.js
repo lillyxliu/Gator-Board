@@ -40,6 +40,7 @@ const sampleTasks = [
 
 const page = document.body.dataset.page;
 const $ = (selector, scope = document) => scope.querySelector(selector);
+const ic = name => `<i class="i i-${name}" aria-hidden="true"></i>`;
 
 function escapeHtml(value = "") {
   return String(value).replace(/[&<>'"]/g, character => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"})[character]);
@@ -344,6 +345,14 @@ function renderMap() {
   const you = document.createElement("div");
   you.className = "map-you";
   const youMarker = new maplibregl.Marker({element:you}).setLngLat(campus).addTo(map);
+  const shared = new URLSearchParams(location.search), sharedSpot = shared.has("lat") && shared.has("lng") && inMapBounds([+shared.get("lng"),+shared.get("lat")]) ? [+shared.get("lng"),+shared.get("lat")] : null;
+  if (sharedSpot) {
+    map.jumpTo({center:sharedSpot,zoom:16.5});
+    const sharedPin = document.createElement("div");
+    sharedPin.className = "map-request is-open";
+    sharedPin.innerHTML = '<span class="map-label"><span class="map-full" style="display:inline">Shared location</span></span><span class="map-pin" aria-hidden="true"></span>';
+    new maplibregl.Marker({element:sharedPin,anchor:"top-left"}).setLngLat(sharedSpot).addTo(map);
+  }
   // Blue dot follows the device location (needs https or localhost); stays on campus if denied or outside the map area.
   if (navigator.geolocation) {
     let centered = false;
@@ -352,7 +361,7 @@ function renderMap() {
       
       if (!inMapBounds(here)) { if (!centered) showToast("You're outside the UF map area"); centered = true; return; }
       youMarker.setLngLat(here);
-      if (!centered) { map.easeTo({center:here}); centered = true; }
+      if (!centered) { if (!sharedSpot) map.easeTo({center:here}); centered = true; }
     },() => showToast("Location unavailable, showing campus"),{enableHighAccuracy:true,maximumAge:10000});
   }
   const savedRequests = getSavedTasks().filter(task => Number.isFinite(task.lat) && Number.isFinite(task.lng)).map(task => ({kind:"tasks",title:task.title.length > 22 ? `${task.title.slice(0,21)}…` : task.title,full:task.title,taskId:task.id,category:task.category,lat:task.lat,lng:task.lng}));
@@ -495,17 +504,18 @@ function renderChatList() {
   const draw = () => {
     const query = search.value.trim().toLowerCase();
     const all = getChats();
-    const chats = all.filter(chat => `${chat.name} ${chat.taskTitle} ${lastMessage(chat) ? lastMessage(chat).text : ""}`.toLowerCase().includes(query))
+    const chats = all.filter(chat => `${chat.name} ${chat.taskTitle} ${lastMessage(chat) ? messagePreview(lastMessage(chat)) : ""}`.toLowerCase().includes(query))
       .sort((a,b) => (lastMessage(b) ? lastMessage(b).at : 0) - (lastMessage(a) ? lastMessage(a).at : 0));
     const unread = all.reduce((sum,chat) => sum + (isLocked(chat) ? 0 : chat.unread),0);
     $("#chat-unread").textContent = unread ? `${unread} unread` : "";
     $("#chat-empty").hidden = chats.length > 0;
     list.innerHTML = chats.map(chat => {
       const last = lastMessage(chat), locked = isLocked(chat), unreadBadge = chat.unread && !locked;
-      const preview = last ? `${last.from === "me" ? "You: " : ""}${last.text}` : "No messages yet";
-      return `<div class="chat-row"><a class="chat-card${locked ? " is-locked" : ""}" href="chat.html?id=${encodeURIComponent(chat.id)}"><span class="chat-avatar">${escapeHtml(initials(chat.name))}</span><span class="chat-main"><span class="chat-top"><strong>${escapeHtml(chat.name)}</strong><time>${last ? chatTime(last.at) : ""}</time></span><span class="chat-task">${escapeHtml(chat.taskTitle)}</span><span class="chat-preview${unreadBadge ? " is-unread" : ""}"><span>${escapeHtml(preview)}</span>${unreadBadge ? `<b class="chat-badge">${chat.unread}</b>` : ""}</span></span>${locked ? '<span class="chat-lock"><span aria-hidden="true">🔒</span>Locked</span>' : ""}</a>${editing ? `<button type="button" class="chat-delete" data-id="${escapeHtml(chat.id)}" aria-label="Delete chat with ${escapeHtml(chat.name)}">✕</button>` : ""}</div>`;
+      const preview = last ? `${last.from === "me" ? "You: " : ""}${messagePreview(last)}` : "No messages yet";
+      return `<div class="chat-row"><a class="chat-card${locked ? " is-locked" : ""}" href="chat.html?id=${encodeURIComponent(chat.id)}"><span class="chat-avatar">${escapeHtml(initials(chat.name))}</span><span class="chat-main"><span class="chat-top"><strong>${escapeHtml(chat.name)}</strong><time>${last ? chatTime(last.at) : ""}</time></span><span class="chat-task">${escapeHtml(chat.taskTitle)}</span><span class="chat-preview${unreadBadge ? " is-unread" : ""}"><span>${escapeHtml(preview)}</span>${unreadBadge ? `<b class="chat-badge">${chat.unread}</b>` : ""}</span></span>${locked ? `<span class="chat-lock">${ic("lock")}Locked</span>` : ""}</a>${editing ? `<button type="button" class="chat-delete" data-id="${escapeHtml(chat.id)}" aria-label="Delete chat with ${escapeHtml(chat.name)}">${ic("x")}</button>` : ""}</div>`;
     }).join("");
   };
+  setupNewChat();
   search.addEventListener("input",draw);
   $("#chat-edit").addEventListener("click",event => { editing = !editing; event.currentTarget.textContent = editing ? "Done" : "Edit"; draw(); });
   list.addEventListener("click",event => {
@@ -517,33 +527,95 @@ function renderChatList() {
   draw();
 }
 
+const messagePreview = message => message.type === "image" ? "Photo" : message.type === "location" ? "Shared location" : message.text;
+
+function messageMarkup(message) {
+  const mine = message.from === "me";
+  let body = `<p>${escapeHtml(message.text)}</p>`;
+  if (message.type === "image") body = `<img class="chat-photo" src="${escapeHtml(message.src)}" alt="Shared photo">`;
+  if (message.type === "location") body = `<a class="chat-location" href="map.html?lat=${Number(message.lat)}&lng=${Number(message.lng)}"><span aria-hidden="true">${ic("pin")}</span><span><strong>Shared location</strong><small>${escapeHtml(message.label || "Open on map")}</small></span></a>`;
+  return `<div class="chat-bubble ${mine ? "is-mine" : "is-theirs"}${message.type ? " has-media" : ""}">${body}<time>${chatTime(message.at)}</time></div>`;
+}
+
+// Shrink a picked photo before saving it so it fits in the browser's storage.
+function shrinkImage(file, max = 800) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = reject;
+      image.onload = () => {
+        const scale = Math.min(1,max / Math.max(image.width,image.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(image.width * scale);
+        canvas.height = Math.round(image.height * scale);
+        canvas.getContext("2d").drawImage(image,0,0,canvas.width,canvas.height);
+        resolve(canvas.toDataURL("image/jpeg",0.8));
+      };
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function openSheet(sheet) {
+  sheet.hidden = false;
+  const close = () => { sheet.hidden = true; sheet.removeEventListener("click",onClick); };
+  const onClick = event => { if (event.target === sheet || event.target.closest("[data-close]")) close(); };
+  sheet.addEventListener("click",onClick);
+}
+
 function renderThread(id) {
   const chats = getChats(), chat = chats.find(item => item.id === id);
   if (!chat) { location.replace("chat.html"); return; }
   $("#chat-thread-view").hidden = false;
   if (chat.unread) { chat.unread = 0; saveChats(chats); }
+  markNotificationsRead(`chat-${chat.id}-`);
   const log = $("#chat-log"), form = $("#chat-form"), input = form.elements.message, notice = $("#chat-lock-note");
+  const lockedControls = form.querySelectorAll("button, #photo-input");
   $("#thread-name").textContent = chat.name;
   $("#thread-task").textContent = chat.taskTitle;
   const draw = () => {
     const locked = isLocked(chat);
-    log.innerHTML = chat.messages.map(message => `<div class="chat-bubble ${message.from === "me" ? "is-mine" : "is-theirs"}"><p>${escapeHtml(message.text)}</p><time>${chatTime(message.at)}</time></div>`).join("") || '<p class="chat-empty-thread">Say hello to start the conversation.</p>';
+    log.innerHTML = chat.messages.map(messageMarkup).join("") || '<p class="chat-empty-thread">Say hello to start the conversation.</p>';
     notice.hidden = !locked;
     notice.textContent = lockReason(chat);
     input.disabled = locked;
-    form.querySelector("button").disabled = locked;
+    lockedControls.forEach(control => { control.disabled = locked; });
     input.placeholder = locked ? "Chat locked" : "Write a message…";
     $("#complete-task").hidden = locked;
     log.lastElementChild && log.lastElementChild.scrollIntoView({block:"end"});
   };
+  const send = message => {
+    if (isLocked(chat)) return;
+    chat.messages.push({from:"me",at:Date.now(),...message});
+    try { saveChats(chats); }
+    catch { chat.messages.pop(); showToast("Couldn't save that, device storage is full"); return; }
+    draw();
+  };
   form.addEventListener("submit",event => {
     event.preventDefault();
     const text = input.value.trim();
-    if (!text || isLocked(chat)) return;
-    chat.messages.push({from:"me",text,at:Date.now()});
-    saveChats(chats);
+    if (!text) return;
     input.value = "";
-    draw();
+    send({text});
+  });
+  $("#photo-input").addEventListener("change",async event => {
+    const file = event.target.files[0];
+    event.target.value = "";
+    if (!file) return;
+    try { send({type:"image",src:await shrinkImage(file)}); } catch { showToast("Couldn't read that picture"); }
+  });
+  $("#attach-photo").addEventListener("click",() => $("#photo-input").click());
+  $("#share-location").addEventListener("click",() => {
+    if (!navigator.geolocation) { showToast("Location isn't available on this device"); return; }
+    showToast("Finding your location…");
+    navigator.geolocation.getCurrentPosition(async ({coords}) => {
+      const spot = {lat:coords.latitude,lng:coords.longitude};
+      const closest = (await loadPlaces()).map(place => ({place,distance:distanceKm(place,spot)})).sort((a,b) => a.distance - b.distance)[0];
+      send({type:"location",lat:+spot.lat.toFixed(5),lng:+spot.lng.toFixed(5),label:closest && closest.distance < 0.25 ? `Near ${closest.place.n}` : "Current location"});
+    },() => showToast("Couldn't get your location"),{enableHighAccuracy:true,timeout:10000});
   });
   $("#complete-task").addEventListener("click",() => {
     chat.completed = true;
@@ -551,6 +623,119 @@ function renderThread(id) {
     showToast("Task marked complete. Chat locked.");
     draw();
   });
+  $("#show-request").addEventListener("click",() => {
+    const task = getAllTasks().find(item => item.id === chat.taskId);
+    $("#request-details").innerHTML = task
+      ? `<h2>${escapeHtml(task.title)}</h2><p class="sheet-reward">${escapeHtml(task.reward || task.summary || "")}</p><p><span>${ic("pin")}</span>${escapeHtml(task.location || "")}</p><p><span>${ic("clock")}</span>${escapeHtml(task.time || "")}</p><p class="sheet-description">${escapeHtml(task.description || "")}</p><a class="primary-button sheet-link" href="task-detail.html?id=${encodeURIComponent(task.id)}">View full request</a>`
+      : `<h2>${escapeHtml(chat.taskTitle)}</h2><p class="sheet-description">The details for this request are no longer available.</p>`;
+    openSheet($("#request-sheet"));
+  });
   draw();
 }
+
+// "New chat": pick someone else's open request and start a conversation with its poster.
+function setupNewChat() {
+  $("#new-chat").addEventListener("click",() => {
+    const requests = getAllTasks().filter(task => !task.createdByMe);
+    $("#new-chat-list").innerHTML = requests.map(task => `<button type="button" class="sheet-row" data-id="${escapeHtml(task.id)}"><span class="chat-avatar">${escapeHtml(initials(task.poster || "Task poster"))}</span><span class="sheet-row-main"><strong>${escapeHtml(task.poster || "Task poster")}</strong><small>${escapeHtml(task.title)}</small></span><b>${escapeHtml(task.reward || task.summary || "")}</b></button>`).join("") || '<p class="empty-state">No open requests right now.</p>';
+    openSheet($("#new-chat-sheet"));
+  });
+  $("#new-chat-list").addEventListener("click",event => {
+    const row = event.target.closest(".sheet-row");
+    const task = row && getAllTasks().find(item => item.id === row.dataset.id);
+    if (task) openChatForTask(task,false);
+  });
+}
+
 if (page === "chat") renderChat();
+
+// ---- Notifications (stored on this device until there is a backend feed) ----
+const NOTIFICATION_KEY = "gatorBoardNotifications";
+const SEEN_TASKS_KEY = "gatorBoardSeenTasks";
+const NEARBY_KM = 3;
+
+function getNotifications() {
+  try { const saved = JSON.parse(localStorage.getItem(NOTIFICATION_KEY)); if (Array.isArray(saved)) return saved; } catch {}
+  return [];
+}
+function saveNotifications(items) { localStorage.setItem(NOTIFICATION_KEY,JSON.stringify(items.sort((a,b) => b.at - a.at).slice(0,50))); }
+
+function addNotification(item) {
+  const items = getNotifications();
+  if (items.some(existing => existing.id === item.id)) return false;
+  items.push({read:false,at:Date.now(),...item});
+  saveNotifications(items);
+  return true;
+}
+
+function markNotificationsRead(idPrefix) {
+  const items = getNotifications();
+  let changed = false;
+  items.forEach(item => { if (!item.read && item.id.startsWith(idPrefix)) { item.read = true; changed = true; } });
+  if (changed) saveNotifications(items);
+  return changed;
+}
+
+// Turn unread chat messages and newly posted nearby tasks from other people into notifications.
+function syncNotifications() {
+  getChats().forEach(chat => {
+    const last = lastMessage(chat);
+    if (!chat.unread || isLocked(chat) || !last || last.from === "me") return;
+    addNotification({id:`chat-${chat.id}-${last.at}`,type:"chat",title:chat.name,body:`${messagePreview(last)} · ${chat.taskTitle}`,href:`chat.html?id=${encodeURIComponent(chat.id)}`,at:last.at});
+  });
+  const tasks = getAllTasks();
+  let seen;
+  try { seen = JSON.parse(localStorage.getItem(SEEN_TASKS_KEY)); } catch { seen = null; }
+  if (!Array.isArray(seen)) { localStorage.setItem(SEEN_TASKS_KEY,JSON.stringify(tasks.map(task => task.id))); return; } // first run: don't flood with existing tasks
+  const fresh = tasks.filter(task => !seen.includes(task.id));
+  fresh.forEach(task => {
+    const hasSpot = Number.isFinite(task.lat) && Number.isFinite(task.lng);
+    const nearby = !hasSpot || distanceKm({lat:task.lat,lng:task.lng},{lat:CAMPUS_CENTER[1],lng:CAMPUS_CENTER[0]}) <= NEARBY_KM;
+    if (nearby && !task.createdByMe) addNotification({id:`task-${task.id}`,type:"task",title:"New task nearby",body:`${task.title} · ${task.reward || task.summary || ""}${task.location ? ` · ${task.location}` : ""}`,href:`task-detail.html?id=${encodeURIComponent(task.id)}`});
+  });
+  if (fresh.length) localStorage.setItem(SEEN_TASKS_KEY,JSON.stringify(tasks.map(task => task.id)));
+}
+
+function timeAgo(at) {
+  const minutes = Math.round((Date.now() - at) / 60000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  if (minutes < 1440) return `${Math.round(minutes / 60)} hr ago`;
+  return chatTime(at);
+}
+
+function setupNotifications() {
+  const bells = document.querySelectorAll(".notification");
+  if (!bells.length) return;
+  const sheet = document.createElement("div");
+  sheet.className = "sheet";
+  sheet.id = "notification-sheet";
+  sheet.setAttribute("role","dialog");
+  sheet.setAttribute("aria-label","Notifications");
+  sheet.hidden = true;
+  sheet.innerHTML = `<div class="sheet-card"><button type="button" class="sheet-close" data-close aria-label="Close">${ic("x")}</button><h2>Notifications</h2><button type="button" class="notice-readall" id="notice-readall">Mark all as read</button><div id="notice-list"></div></div>`;
+  document.body.appendChild(sheet);
+  const list = sheet.querySelector("#notice-list");
+  const draw = () => {
+    const items = getNotifications();
+    const unread = items.filter(item => !item.read).length;
+    bells.forEach(bell => { bell.classList.toggle("has-unread",unread > 0); bell.setAttribute("aria-label",unread ? `Notifications, ${unread} unread` : "Notifications"); });
+    sheet.querySelector("#notice-readall").hidden = !unread;
+    list.innerHTML = items.map(item => `<button type="button" class="notice${item.read ? "" : " is-unread"}" data-id="${escapeHtml(item.id)}"><span class="notice-icon">${ic(item.type === "chat" ? "chat" : "pin")}</span><span class="notice-main"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.body)}</small></span><time>${timeAgo(item.at)}</time></button>`).join("") || '<p class="empty-state">You\'re all caught up.</p>';
+  };
+  bells.forEach(bell => bell.addEventListener("click",() => { syncNotifications(); draw(); openSheet(sheet); }));
+  list.addEventListener("click",event => {
+    const row = event.target.closest(".notice");
+    if (!row) return;
+    const item = getNotifications().find(entry => entry.id === row.dataset.id);
+    markNotificationsRead(row.dataset.id);
+    if (item && item.href) location.href = item.href; else draw();
+  });
+  sheet.querySelector("#notice-readall").addEventListener("click",() => { markNotificationsRead(""); draw(); });
+  const refresh = () => { syncNotifications(); draw(); };
+  window.addEventListener("storage",refresh);
+  setInterval(refresh,15000);
+  refresh();
+}
+syncNotifications();
+setupNotifications();
