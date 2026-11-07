@@ -1,5 +1,11 @@
 # Gator Board
 
+## Member profiles and reviews
+
+Open a task and select its poster's username to view their public profile, average rating, review count, and reviews. After submitting a task review, select **View member reviews** to see the updated list. Members without reviews show **No reviews yet**. Public responses exclude email addresses and account settings.
+
+For a local demo, open `login.html?demo=1`, sign in using the demo flow, and select a task poster. To use PostgreSQL-backed accounts and reviews instead, use `?demo=0` and log in with a real local account. Demo data and database data are separate.
+
 Gator Board is a mobile-first task exchange for University of Florida students. It is built with HTML, CSS, JavaScript, Node.js, Express, PostgreSQL, and Docker.
 
 ## Run instructions

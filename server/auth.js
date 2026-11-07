@@ -160,6 +160,22 @@ router.get("/me", async (req, res) => {
     }
 });
 
+router.get("/public-profile", requireUser, async (req, res) => {
+    const id = Number(req.query.id);
+    if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({error: "Invalid user."});
+    try {
+        const user = await pool.query("SELECT id, username, avatar FROM users WHERE id = $1", [id]);
+        if (!user.rows.length) return res.status(404).json({error: "User not found."});
+        const result = await pool.query(`SELECT r.rating, r.comment, r.created_at AS "createdAt", u.username AS reviewer FROM reviews r JOIN users u ON u.id = r.reviewer_id WHERE r.reviewee_id = $1 ORDER BY r.created_at DESC`, [id]);
+        const reviews = result.rows;
+        const rating = reviews.length ? Math.round(reviews.reduce((sum,r) => sum + r.rating,0) / reviews.length * 10) / 10 : 0;
+        res.json({profile: {...user.rows[0], rating, review_count: reviews.length, reviews}});
+    } catch (error) {
+        console.error("Unable to load public profile", error);
+        res.status(500).json({error: "Unable to load profile."});
+    }
+});
+
 router.get("/profile", requireUser, async (req, res) => {
     try {
         const result = await pool.query(

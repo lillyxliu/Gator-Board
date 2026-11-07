@@ -160,6 +160,15 @@
   };
 
   const routes = {
+    "GET public-profile": ({query}) => {
+      const id = Number(query.get("id"));
+      if (!Number.isSafeInteger(id) || id <= 0) return [400,{error:"Invalid user."}];
+      const user = userById(id);
+      if (!user) return [404,{error:"User not found."}];
+      const reviews = state.reviews.filter(r => r.revieweeId === id).sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+      const rating = reviews.length ? Math.round(reviews.reduce((sum,r) => sum+r.rating,0)/reviews.length*10)/10 : 0;
+      return [200,{profile:{id:user.id,username:user.username,avatar:user.avatar,rating,review_count:reviews.length,reviews:reviews.map(r => ({rating:r.rating,comment:r.comment,createdAt:r.createdAt,reviewer:(userById(r.reviewerId)||{}).username}))}}];
+    },
     "GET profile": () => {
       const reviews = state.reviews.filter(review => review.revieweeId === ME).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       const rating = reviews.length ? Math.round(reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length * 10) / 10 : 0;
