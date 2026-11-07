@@ -160,6 +160,15 @@
   };
 
   const routes = {
+    "GET public-profile": ({query}) => {
+      const id = Number(query.get("id"));
+      if (!Number.isSafeInteger(id) || id <= 0) return [400,{error:"Invalid user."}];
+      const user = userById(id);
+      if (!user) return [404,{error:"User not found."}];
+      const reviews = state.reviews.filter(r => r.revieweeId === id).sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+      const rating = reviews.length ? Math.round(reviews.reduce((sum,r) => sum+r.rating,0)/reviews.length*10)/10 : 0;
+      return [200,{profile:{id:user.id,username:user.username,avatar:user.avatar,rating,review_count:reviews.length,reviews:reviews.map(r => ({rating:r.rating,comment:r.comment,createdAt:r.createdAt,reviewer:(userById(r.reviewerId)||{}).username}))}}];
+    },
     "GET profile": () => {
       const reviews = state.reviews.filter(review => review.revieweeId === ME).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       const rating = reviews.length ? Math.round(reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length * 10) / 10 : 0;
@@ -174,6 +183,7 @@
       if (typeof taskId !== "string" || !taskId.trim() || revieweeId === ME || !Number.isInteger(rating) || rating < 1 || rating > 5 || comment.length > 1000) {
         return [400, {error: "Please provide a rating from 1 to 5 and a comment of 1000 characters or fewer."}];
       }
+      if (!state.chats.some(chat => chat.taskId === taskId && chat.completed && ((chat.ownerId === ME && chat.helperId === revieweeId) || (chat.helperId === ME && chat.ownerId === revieweeId)))) return [403,{error:'Reviews are available only between participants after the owner marks the task complete in Chat.'}];
       const review = {reviewerId: ME, revieweeId, taskId: taskId.trim(), rating, comment: comment || null, createdAt: new Date().toISOString()};
       state.reviews = state.reviews.filter(item => !(item.reviewerId === ME && item.revieweeId === revieweeId && item.taskId === review.taskId)).concat(review);
       return [201, {review: {id: state.reviews.length, taskId: review.taskId, rating, comment: review.comment, createdAt: review.createdAt}}];

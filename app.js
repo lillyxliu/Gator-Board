@@ -231,7 +231,7 @@ function renderHome() {
 }
 
 function detailMarkup(task, review = false, ownerView = false) {
-  return `${task.image ? imageMarkup(task,"hero-image") : ""}<div class="detail-heading"><h2>${escapeHtml(task.title)}</h2><strong>${escapeHtml(task.reward || task.summary || "$8")}</strong></div><p class="detail-row"><span><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 12-9 12S3 17 3 10a9 9 0 1 1 18 0Z"/><circle cx="12" cy="10" r="3"/></svg></span>${escapeHtml(task.location)}</p><p class="detail-row"><span><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 2v6M17 2v6M3 11h18"/></svg></span>${escapeHtml(task.time)}</p>${Number.isFinite(taskDuration(task)) ? `<p class="detail-row">Estimated duration: ${escapeHtml(task.durationMinutes)} min</p>` : ""}${review ? "" : `<div class="poster-row">${avatarMarkup(task.posterAvatar, task.poster || "gator_user")}<span><p>Posted by ${escapeHtml(task.poster || "gator_user")}</p><small>${escapeHtml(task.posted || "Just now")}</small></span>${ownerView || task.createdByMe ? "" : `<button class="outline-button" type="button" data-action="message">Message</button>`}</div>`}<section class="detail-section"><h3>Description</h3><p>${escapeHtml(task.description)}</p></section><section class="detail-section"><h3>Location</h3><div class="detail-map" id="detail-map" role="region" aria-label="Map showing ${escapeHtml(task.location)}"></div></section>${review ? "" : `<button class="primary-button offer-button" type="button" data-action="complete">${ownerView ? "Complete Task & Review Runner" : "Complete Task & Review Submitter"}</button>`}`;
+  return `${task.image ? imageMarkup(task,"hero-image") : ""}<div class="detail-heading"><h2>${escapeHtml(task.title)}</h2><strong>${escapeHtml(task.reward || task.summary || "$8")}</strong></div><p class="detail-row"><span><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 12-9 12S3 17 3 10a9 9 0 1 1 18 0Z"/><circle cx="12" cy="10" r="3"/></svg></span>${escapeHtml(task.location)}</p><p class="detail-row"><span><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 2v6M17 2v6M3 11h18"/></svg></span>${escapeHtml(task.time)}</p>${Number.isFinite(taskDuration(task)) ? `<p class="detail-row">Estimated duration: ${escapeHtml(task.durationMinutes)} min</p>` : ""}${review ? "" : `<div class="poster-row">${avatarMarkup(task.posterAvatar, task.poster || "gator_user")}<span><p>Posted by ${Number.isSafeInteger(Number(task.submitterId)) && Number(task.submitterId) > 0 ? `<a class="member-profile-link" href="public-profile.html?id=${encodeURIComponent(task.submitterId)}">${escapeHtml(task.poster || "Gator Board member")}</a>` : escapeHtml(task.poster || "gator_user")}</p><small>${escapeHtml(task.posted || "Just now")}</small></span>${ownerView || task.createdByMe ? "" : `<button class="outline-button" type="button" data-action="message">Message</button>`}</div>`}<section class="detail-section"><h3>Description</h3><p>${escapeHtml(task.description)}</p></section><section class="detail-section"><h3>Location</h3><div class="detail-map" id="detail-map" role="region" aria-label="Map showing ${escapeHtml(task.location)}"></div></section>${review ? "" : `<button class="primary-button offer-button" type="button" data-action="complete">${ownerView ? "Complete Task & Review Runner" : "Complete Task & Review Submitter"}</button>`}`;
 }
 
 // Small real map for the review and detail pages; falls back to matching the location text against places.json for older tasks without coordinates.
@@ -269,6 +269,8 @@ function renderDetail() {
 
 async function openReviewModal(task, ownerView) {
   let revieweeId = ownerView ? task.runnerId : task.submitterId;
+  const selectedMember = Number(new URLSearchParams(location.search).get('reviewee'));
+  if (Number.isSafeInteger(selectedMember) && selectedMember > 0) revieweeId = selectedMember;
   if (!ownerView && !Number.isInteger(task.runnerId)) {
     const meResponse = await fetch("/api/me");
     if (meResponse.status === 401) {
@@ -329,6 +331,13 @@ async function openReviewModal(task, ownerView) {
       if (!response.ok) throw new Error(result.error || "Unable to save review.");
       modal.hidden = true;
       showToast("Review submitted.");
+      const reviewLink = document.createElement("a");
+      reviewLink.className = "secondary-button return-home-button";
+      reviewLink.href = `public-profile.html?id=${encodeURIComponent(revieweeId)}`;
+      reviewLink.textContent = "View member reviews";
+      document.querySelector("#task-detail .submitted-review-link")?.remove();
+      reviewLink.classList.add("submitted-review-link");
+      document.getElementById("task-detail").append(reviewLink);
     } catch (error) {
       console.error("Review error:", error);
       $("#modal-rating-error").textContent = error.message;
@@ -1032,6 +1041,14 @@ async function renderThread(id) {
     log.innerHTML = messages.map(message => messageMarkup(message,me)).join("") || '<p class="chat-empty-thread">Say hello to start the conversation.</p>';
     notice.hidden = !locked;
     notice.textContent = locked ? lockText(chat) : "";
+    document.getElementById('chat-review-member')?.remove();
+    if (chat.completed) {
+      const link = document.createElement('a');
+      link.id='chat-review-member'; link.className='secondary-button';
+      link.textContent='Review this member';
+      link.href=`task-detail.html?id=${encodeURIComponent(chat.taskId)}&reviewee=${encodeURIComponent(chat.other.id)}`;
+      notice.after(link);
+    }
     input.disabled = locked;
     lockables.forEach(control => { control.disabled = locked; });
     input.placeholder = locked ? "Chat locked" : "Write a message…";
@@ -1149,3 +1166,30 @@ function setupNotifications() {
   setInterval(load,20000);
 }
 tasksReady.then(setupNotifications);
+async function renderPublicProfile() {
+  const status = document.getElementById("member-status");
+  const retry = document.getElementById("member-retry");
+  retry.onclick = renderPublicProfile;
+  retry.hidden = true;
+  status.textContent = "Loading reviews…";
+  try {
+    const id = new URLSearchParams(location.search).get("id");
+    if (!/^[1-9]\d*$/.test(id || "")) throw new Error("Invalid member link. Return Home and select a task poster.");
+    const response = await fetch(`/api/public-profile?id=${encodeURIComponent(id)}`, {cache:"no-store"});
+    if (response.status === 401) { status.textContent = "Please log in to view member reviews."; document.getElementById("member-name").innerHTML = '<a href="login.html">Log in</a>'; return; }
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Unable to load profile.");
+    const profile = data.profile;
+    document.getElementById("member-name").textContent = profile.username;
+    document.getElementById("member-avatar").innerHTML = avatarMarkup(profile.avatar, profile.username);
+    const count = Number(profile.review_count) || 0;
+    document.getElementById("member-rating").textContent = count ? `${Number(profile.rating).toFixed(1)} / 5 ★ · ${count} review${count === 1 ? "" : "s"}` : "Not rated yet";
+    document.getElementById("member-reviews").innerHTML = profile.reviews.map(review => `<article class="review-card"><strong>From ${escapeHtml(review.reviewer || "Gator Board member")}</strong><div class="review-stars" aria-label="${Number(review.rating)} out of 5 stars">${"★".repeat(Math.max(0,Math.min(5,Number(review.rating))))}</div><p>${escapeHtml(review.comment || "No comment provided.")}</p><time>${escapeHtml(new Date(review.createdAt).toLocaleDateString())}</time></article>`).join("");
+    status.textContent = count ? "" : "No reviews yet.";
+  } catch (error) {
+    document.getElementById("member-name").textContent = "Member profile";
+    status.textContent = error.message || "Unable to load profile.";
+    retry.hidden = false;
+  }
+}
+if (document.body.dataset.page === "public-profile") renderPublicProfile();
