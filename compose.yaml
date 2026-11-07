@@ -6,6 +6,7 @@ services:
     environment:
       DATABASE_URL: postgres://gatorboard:gatorboard_dev@db:5432/gatorboard
       PORT: 3000
+      ADMIN_USER_IDS: ${ADMIN_USER_IDS:-}
     volumes:
       - session_secrets:/app/secrets
     depends_on:

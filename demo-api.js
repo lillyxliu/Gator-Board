@@ -183,6 +183,7 @@
       if (typeof taskId !== "string" || !taskId.trim() || revieweeId === ME || !Number.isInteger(rating) || rating < 1 || rating > 5 || comment.length > 1000) {
         return [400, {error: "Please provide a rating from 1 to 5 and a comment of 1000 characters or fewer."}];
       }
+      if (!state.chats.some(chat => chat.taskId === taskId && chat.completed && ((chat.ownerId === ME && chat.helperId === revieweeId) || (chat.helperId === ME && chat.ownerId === revieweeId)))) return [403,{error:'Reviews are available only between participants after the owner marks the task complete in Chat.'}];
       const review = {reviewerId: ME, revieweeId, taskId: taskId.trim(), rating, comment: comment || null, createdAt: new Date().toISOString()};
       state.reviews = state.reviews.filter(item => !(item.reviewerId === ME && item.revieweeId === revieweeId && item.taskId === review.taskId)).concat(review);
       return [201, {review: {id: state.reviews.length, taskId: review.taskId, rating, comment: review.comment, createdAt: review.createdAt}}];

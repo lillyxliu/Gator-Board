@@ -269,6 +269,8 @@ function renderDetail() {
 
 async function openReviewModal(task, ownerView) {
   let revieweeId = ownerView ? task.runnerId : task.submitterId;
+  const selectedMember = Number(new URLSearchParams(location.search).get('reviewee'));
+  if (Number.isSafeInteger(selectedMember) && selectedMember > 0) revieweeId = selectedMember;
   if (!ownerView && !Number.isInteger(task.runnerId)) {
     const meResponse = await fetch("/api/me");
     if (meResponse.status === 401) {
@@ -1039,6 +1041,14 @@ async function renderThread(id) {
     log.innerHTML = messages.map(message => messageMarkup(message,me)).join("") || '<p class="chat-empty-thread">Say hello to start the conversation.</p>';
     notice.hidden = !locked;
     notice.textContent = locked ? lockText(chat) : "";
+    document.getElementById('chat-review-member')?.remove();
+    if (chat.completed) {
+      const link = document.createElement('a');
+      link.id='chat-review-member'; link.className='secondary-button';
+      link.textContent='Review this member';
+      link.href=`task-detail.html?id=${encodeURIComponent(chat.taskId)}&reviewee=${encodeURIComponent(chat.other.id)}`;
+      notice.after(link);
+    }
     input.disabled = locked;
     lockables.forEach(control => { control.disabled = locked; });
     input.placeholder = locked ? "Chat locked" : "Write a message…";

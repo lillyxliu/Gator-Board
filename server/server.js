@@ -33,6 +33,18 @@ app.use(session({
     },
 }));
 
+// Check account status on every API request, including sessions created before a ban.
+app.use('/api', async (req,res,next) => {
+    if (!req.session.userId) return next();
+    try {
+        const result = await pool.query('SELECT is_banned FROM users WHERE id=$1',[req.session.userId]);
+        if (!result.rows.length || result.rows[0].is_banned) {
+            return res.status(403).json({error:'This account is suspended or unavailable. Contact the team for assistance.'});
+        }
+        next();
+    } catch {res.status(503).json({error:'Unable to check account status. Please try again.'});}
+});
+app.use('/api/admin',require('./moderation'));
 app.use("/api", require("./auth"));
 app.use("/api", require("./chat"));
 app.use(express.static(path.join(__dirname, "..")));

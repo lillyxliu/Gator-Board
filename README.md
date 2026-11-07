@@ -1,5 +1,13 @@
 # Gator Board
 
+## Moderation and review eligibility
+
+For the real Express/PostgreSQL deployment, set `ADMIN_USER_IDS` to a comma-separated list of trusted existing account IDs in your local `.env` file, then rebuild with `docker compose up --build -d`. Open `admin.html` while logged into an allowed account to inspect recent fraud reports and suspend or restore a member. No accounts are administrators by default. Do not commit your administrator configuration. Administrators cannot suspend another configured administrator from this interface. Suspension rejects login and API access from existing sessions; unbanning restores access. Existing tasks are retained.
+
+Reviews are accepted only between the two participants of a completed task chat. The task owner marks completion in Chat; either participant can then select **Review this member** and submit a rating from the task detail screen. Review values cannot grant eligibility: the server verifies the completed participant pair in PostgreSQL. Public profiles display received reviews. The static demo enforces review eligibility too, but administrator moderation requires the real server and is not simulated on GitHub Pages.
+
+Tasks, chats, messages, profiles and reviews already have PostgreSQL-backed persistence in the current server version. Firebase migration is not required to run these services. A Firebase or public-hosting deployment requires the team's own project and hosting configuration.
+
 ## Member profiles and reviews
 
 Open a task and select its poster's username to view their public profile, average rating, review count, and reviews. After submitting a task review, select **View member reviews** to see the updated list. Members without reviews show **No reviews yet**. Public responses exclude email addresses and account settings.

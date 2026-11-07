@@ -80,6 +80,8 @@ router.post("/login", authLimit, async (req, res) => {
         if (!user || !(await argon2.verify(user.password_hash, password))) {
             return res.status(401).json({error: "Invalid username/email or password"});
         }
+        const status = await pool.query('SELECT is_banned FROM users WHERE id=$1',[user.id]);
+        if (status.rows[0]?.is_banned) return res.status(403).json({error:'This account is suspended. Contact the team for assistance.'});
 
         req.session.regenerate((error) => {
             if (error) {
@@ -235,6 +237,8 @@ router.post("/reviews", requireUser, async (req, res) => {
     }
 
     try {
+        const eligible = await pool.query('SELECT id FROM chats WHERE task_id=$1 AND completed AND ((owner_id=$2 AND helper_id=$3) OR (helper_id=$2 AND owner_id=$3)) LIMIT 1',[taskId,req.session.userId,revieweeId]);
+        if (!eligible.rows.length) return res.status(403).json({error:'Reviews are available only between participants after the task owner marks the task complete in Chat.'});
         const result = await pool.query(
             `INSERT INTO reviews (reviewer_id, reviewee_id, task_id, rating, comment)
              VALUES ($1, $2, $3, $4, NULLIF($5, ''))
